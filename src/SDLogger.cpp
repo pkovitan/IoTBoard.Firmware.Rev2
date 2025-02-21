@@ -1,29 +1,81 @@
 #include "SDLogger.h"
 
-SDLogger::SDLogger(const char* logFileName, uint8_t csPin) 
-    : _logFileName(logFileName)
-    , _csPin(csPin)
-    , _isInitialized(false) {
+SDLogger::SDLogger(uint8_t csPin)
+    : _csPin(csPin)
+    , _lastFileDay(0)
+{
+    _currentFilename[0] = '\0';  // Initialize empty string
 }
 
 bool SDLogger::begin() {
     if (!SD.begin(_csPin)) {
-        Serial.println("SD Card initialization failed!");
+        return false;
+    }
+    updateFilename();
+    return true;
+}
+
+void SDLogger::updateFilename() {
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)) {
+        strcpy(_currentFilename, "/error.txt");
+        return;
+    }
+    
+    // Format: /YYYY-MM-DD-log.txt
+    snprintf(_currentFilename, sizeof(_currentFilename),
+             "/%04d-%02d-%02d-log.txt",
+             timeinfo.tm_year + 1900,
+             timeinfo.tm_mon + 1,
+             timeinfo.tm_mday);
+}
+
+bool SDLogger::checkNewDay() {
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)) {
         return false;
     }
     
-    _isInitialized = true;
-    Serial.println("SD Card initialized successfully");
+    // Convert to days since epoch
+    time_t now = mktime(&timeinfo);
+    time_t currentDay = now / (24*60*60);
     
-    // Create header in log file if it doesn't exist
-    File logFile = SD.open(_logFileName, FILE_APPEND);
-    if (logFile) {
-        logFile.println("Time,Level,Message");
-        logFile.close();
+    if (currentDay != _lastFileDay) {
+        _lastFileDay = currentDay;
+        updateFilename();
         return true;
     }
-    
     return false;
+}
+
+void SDLogger::logInfo(const char* message) {
+    // Check if we need to create a new file for a new day
+    checkNewDay();
+    
+    // Open the file in append mode
+    File file = SD.open(_currentFilename, FILE_APPEND);
+    if (!file) {
+        return;
+    }
+    
+    // Get current time
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)) {
+        file.close();
+        return;
+    }
+    
+    // Write timestamp and message
+    char timestamp[20];
+    snprintf(timestamp, sizeof(timestamp), "%02d:%02d:%02d", 
+             timeinfo.tm_hour,
+             timeinfo.tm_min,
+             timeinfo.tm_sec);
+             
+    file.print(timestamp);
+    file.print(" - ");
+    file.println(message);
+    file.close();
 }
 
 String SDLogger::getTimestamp() {
@@ -40,18 +92,6 @@ String SDLogger::getTimestamp() {
         currentMillis % 1000);
     
     return String(timestamp);
-}
-
-bool SDLogger::logInfo(const char* message) {
-    if (!_isInitialized) return false;
-    
-    File logFile = SD.open(_logFileName, FILE_APPEND);
-    if (logFile) {
-        logFile.printf("%s,INFO,%s\n", getTimestamp().c_str(), message);
-        logFile.close();
-        return true;
-    }
-    return false;
 }
 
 bool SDLogger::logWarning(const char* message) {
