@@ -3,6 +3,7 @@
 #include "LEDIndicator.h"
 #include <PCF8574.h>
 #include <WiFi.h>
+#include "IOExpander.h"
 
 // WiFi credentials
 const char* ssid = "YOUR_WIFI_SSID";
@@ -17,6 +18,7 @@ const int   daylightOffset_sec = 0;    // Change if needed for daylight saving
 SDLogger logger;
 PCF8574 ex_io(0x20);
 LEDIndicator leds(ex_io);
+IOExpander io;  // Using default SDA/SCL pins
 
 void setup() {
     Serial.begin(115200);
@@ -59,6 +61,12 @@ void setup() {
         // leds.setRed(true, true);  // Blink red to indicate error
     }
 
+    // Initialize IO Expander
+    if (!io.begin()) {
+        Serial.println("Failed to initialize IO Expander");
+        while(1);
+    }
+
     // Disconnect WiFi if not needed after time sync
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
@@ -71,5 +79,18 @@ void loop() {
     // Update LED states
     leds.loop();
     
+    // Update IO states
+    io.loop();
+
+    // Example usage
+    if (io.isDoorOpen()) {
+        Serial.println("Door is open!");
+    }
+
+    if (io.isEmergencyOn()) {
+        Serial.println("Emergency switch activated!");
+        io.setBuzzer(true);
+    }
+
     delay(1000);
 } 
