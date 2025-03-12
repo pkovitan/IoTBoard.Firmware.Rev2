@@ -18,10 +18,12 @@
 #define PCF8574_ORANGE_PIN P6   // PCF8574 0x20 pin P6
 #define PCF8574_BLUE_PIN P5     // PCF8574 0x20 pin P5
 
-#define EMERGENCY_SW_PIN 2  // MCP23008 0x22 pin 2
-#define DOOR_SW_PIN 1       // MCP23008 0x22 pin 1
-#define GYRO_INT_PIN 4      // MCP23008 0x22 pin 4
-#define ACC_SEN_PIN 3       // MCP23008 0x22 pin 3
+// MCP23008 pins (0x22)
+#define BUZZER_PIN_MCP 0       // MCP23008 pin 0 for buzzer
+#define EMERGENCY_SW_PIN 2     // MCP23008 pin 2
+#define DOOR_SW_PIN 1         // MCP23008 pin 1
+#define GYRO_INT_PIN 4        // MCP23008 pin 4
+#define ACC_SEN_PIN 3         // MCP23008 pin 3
 
 // SIM7600 pins
 #define RXD2 16
@@ -37,8 +39,8 @@
 #define RXD1 26   
 #define TXD1 25
 
-// Buzzer pin
-#define BUZZER_PIN 0
+// Buzzer pin definitions
+// #define BUZZER_PIN_MCP 0       // MCP23008 pin 0 for buzzer
 
 // Timing configurations
 #define DEFAULT_MQTT_INTERVAL 15000  // 15 seconds

@@ -10,6 +10,7 @@
 #include "config.h"
 #include "system.h"
 #include "LEDIndicator.h"
+#include "Buzzer.h"
 
 void setup() {
   Serial.begin(115200);
@@ -21,6 +22,14 @@ void setup() {
     Serial.println("Failed to initialize LED Indicator!");
   }
   
+  // Initialize Buzzer
+  if (!Buzzer.begin()) {
+    Serial.println("Failed to initialize Buzzer!");
+  }
+  
+  // Test double beep at startup
+  Buzzer.doubleBeep();
+  
   // Initialize system components
   System.init();
 }
@@ -31,6 +40,9 @@ void loop() {
   
   // Update LED states
   LedIndicator.update();
+  
+  // Update Buzzer states
+  Buzzer.update();
   
   // Small delay to prevent CPU hogging
   delay(10);
