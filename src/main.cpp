@@ -11,6 +11,12 @@
 #include "system.h"
 #include "LEDIndicator.h"
 #include "Buzzer.h"
+#include "EmergencyButton.h"
+
+// Callback function for emergency button press
+void emergencyButtonPressed() {
+  Serial.println("Emergency Button Pressed!");
+}
 
 void setup() {
   Serial.begin(115200);
@@ -26,6 +32,14 @@ void setup() {
   if (!Buzzer.begin()) {
     Serial.println("Failed to initialize Buzzer!");
   }
+  
+  // Initialize Emergency Button
+  if (!EmergencyButton.begin()) {
+    Serial.println("Failed to initialize Emergency Button!");
+  }
+  
+  // Set callback for emergency button press
+  EmergencyButton.onPress(emergencyButtonPressed);
   
   // Test double beep at startup
   Buzzer.doubleBeep();
@@ -43,6 +57,16 @@ void loop() {
   
   // Update Buzzer states
   Buzzer.update();
+  
+  // Update Emergency Button state
+  EmergencyButton.update();
+  
+  // Test emergency button state
+  if (EmergencyButton.isPressed()) {
+    Serial.println("Emergency Button is currently pressed!");
+    // Reset the emergency state after handling it
+    EmergencyButton.reset();
+  }
   
   // Small delay to prevent CPU hogging
   delay(10);
