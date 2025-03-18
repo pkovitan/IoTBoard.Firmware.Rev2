@@ -14,6 +14,7 @@
 #include "EmergencyButton.h"
 #include "DoorSensor.h"
 #include "EngineSensor.h"
+#include "TemperatureSensor.h"
 
 // Callback function for emergency button press
 void emergencyButtonPressed() {
@@ -40,6 +41,20 @@ void engineStopped() {
   Serial.println("Engine Stopped!");
   // You can add additional actions here when engine stops
   LedIndicator.setBlue(false); // Turn off blue LED when engine stops
+}
+
+// Callback function for temperature change
+void temperatureChanged(float temperature) {
+  Serial.print("Temperature changed to: ");
+  Serial.print(temperature);
+  Serial.println("°C");
+  
+  // You can add additional actions here when temperature changes
+  // For example, turn on warning if temperature is too high
+  if (temperature > 80.0) {
+    LedIndicator.setRed(true);
+    Buzzer.beep(1000); // Beep for 1 second
+  }
 }
 
 void setup() {
@@ -72,6 +87,11 @@ void setup() {
     Serial.println("Failed to initialize Engine Sensor!");
   }
   
+  // Initialize Temperature Sensor
+  if (!TemperatureSensor.begin()) {
+    Serial.println("Failed to initialize Temperature Sensor!");
+  }
+  
   // Set callback for emergency button press
   EmergencyButton.onPress(emergencyButtonPressed);
   
@@ -82,6 +102,12 @@ void setup() {
   // Set callbacks for engine sensor
   EngineSensor.onEngineStart(engineStarted);
   EngineSensor.onEngineStop(engineStopped);
+  
+  // Set callback for temperature sensor
+  TemperatureSensor.onTemperatureChange(temperatureChanged);
+  
+  // Set temperature threshold to 2 degrees (callback will be triggered when temperature changes by 2°C or more)
+  TemperatureSensor.setThreshold(2.0);
   
   // Test double beep at startup
   Buzzer.doubleBeep();
@@ -109,6 +135,9 @@ void loop() {
   // Update Engine Sensor state
   EngineSensor.update();
   
+  // Update Temperature Sensor state
+  TemperatureSensor.update();
+  
   // Test emergency button state
   if (EmergencyButton.isPressed()) {
     Serial.println("Emergency Button is currently pressed!");
@@ -128,6 +157,13 @@ void loop() {
     // Engine is currently running
   } else {
     // Engine is currently off
+  }
+  
+  // You can also check temperature directly if needed
+  float currentTemp = TemperatureSensor.getTemperature();
+  if (currentTemp > 90.0) {
+    // Temperature is critically high
+    // Take emergency action
   }
   
   // Small delay to prevent CPU hogging
