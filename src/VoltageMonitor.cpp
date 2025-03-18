@@ -4,8 +4,8 @@
 VoltageMonitorClass VoltageMonitor;
 
 VoltageMonitorClass::VoltageMonitorClass(uint8_t address) : adc(address) {
-    vinVoltage = 0.0;
-    vbattVoltage = 0.0;
+    _vinVoltage = 0.0;
+    _vbattVoltage = 0.0;
     lastReadTime = 0;
 }
 
@@ -17,11 +17,11 @@ bool VoltageMonitorClass::begin() {
 }
 
 float VoltageMonitorClass::getVin() {
-    return vinVoltage;
+    return _vinVoltage;
 }
 
 float VoltageMonitorClass::getVbatt() {
-    return vbattVoltage;
+    return _vbattVoltage;
 }
 
 void VoltageMonitorClass::update() {
@@ -52,11 +52,11 @@ void VoltageMonitorClass::update() {
             float rawVoltage = (adcValue / 32767.0) * vref;
             
             // Apply scaling factor from Legacy-Main (7.14)
-            vinVoltage = rawVoltage * 7.14;
+            _vinVoltage = rawVoltage * 7.14;
             
             // Debug output
             Serial.print("VIN: ");
-            Serial.print(vinVoltage);
+            Serial.print(_vinVoltage);
             Serial.println("V");
         } else {
             Serial.print("VIN sensor read error: ");
@@ -80,15 +80,23 @@ void VoltageMonitorClass::update() {
             float rawVoltage = (adcValue / 32767.0) * vref;
             
             // Apply scaling factor from Legacy-Main (111.0/75.0)
-            vbattVoltage = rawVoltage * (111.0/75.0);
+            _vbattVoltage = rawVoltage * (111.0/75.0);
             
             // Debug output
             Serial.print("VBATT: ");
-            Serial.print(vbattVoltage);
+            Serial.print(_vbattVoltage);
             Serial.println("V");
         } else {
             Serial.print("VBATT sensor read error: ");
             Serial.println(err);
         }
     }
+}
+
+float VoltageMonitorClass::getVinVoltage() {
+    return _vinVoltage;
+}
+
+float VoltageMonitorClass::getBatteryVoltage() {
+    return _vbattVoltage;
 } 

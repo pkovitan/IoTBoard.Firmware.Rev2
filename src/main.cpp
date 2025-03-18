@@ -20,10 +20,22 @@
 #include "CardReader.h"
 #include "AccelerometerGyro.h"
 #include "GPSModule.h"  // Add GPS Module header
+#include "PayloadModule.h" // Add Payload Module header
+
+// Function prototype
+void updatePayloadData();
 
 // Callback function for emergency button press
 void emergencyButtonPressed() {
   Serial.println("Emergency Button Pressed!");
+}
+
+// Callback function for GPS location change
+void locationChanged(double lat, double lon) {
+  Serial.print("Location changed to: ");
+  Serial.print(lat, 7);
+  Serial.print(", ");
+  Serial.println(lon, 7);
 }
 
 // Callback functions for door sensor
@@ -180,6 +192,14 @@ void setup() {
     Serial.println("Failed to initialize GPS Module!");
   }
   
+  // Initialize Payload Module
+  if (!PayloadModule.begin()) {
+    Serial.println("Failed to initialize Payload Module!");
+  }
+  
+  // Set auto print interval to 1 second
+  PayloadModule.setPrintInterval(1000);
+  
   // Set callback for emergency button press
   EmergencyButton.onPress(emergencyButtonPressed);
   
@@ -211,6 +231,12 @@ void setup() {
   
   // Set motion threshold to 0.5g (callback will be triggered when acceleration changes by 0.5g or more)
   AccelerometerGyro.setThreshold(0.5);
+  
+  // Set callback for GPS location change
+  GPSModule.onLocationChange(locationChanged);
+  
+  // Set location threshold to 0.0001 degrees (approximately 10 meters)
+  GPSModule.setThreshold(0.0001);
   
   // Test double beep at startup
   Buzzer.doubleBeep();
@@ -255,6 +281,12 @@ void loop() {
   
   // Update GPS Module state
   GPSModule.update();
+  
+  // Update Payload Module with current sensor values
+  updatePayloadData();
+  
+  // Update Payload Module state
+  PayloadModule.update();
   
   // Test emergency button state
   if (EmergencyButton.isPressed()) {
@@ -326,4 +358,57 @@ void loop() {
   
   // Small delay to prevent CPU hogging
   delay(10);
+}
+
+// Function to update payload data from all sensors
+void updatePayloadData() {
+  // Set ID and fleet (could be loaded from configuration)
+  PayloadModule.setID("Vehicle01");
+  PayloadModule.setFleet("WillDeleteLater");
+  
+  // Set event (could be determined by system state)
+  PayloadModule.setEvent("WillDeleteLater");
+  
+  // Set card reader data
+  PayloadModule.setCardReader(CardReader.getCardID());
+  
+  // Set voltage data
+  PayloadModule.setVoltageIn(VoltageMonitor.getVinVoltage());
+  PayloadModule.setVoltageBattery(VoltageMonitor.getBatteryVoltage());
+  
+  // Set engine state
+  PayloadModule.setEngine(EngineSensor.isOn() ? "ON" : "OFF");
+  
+  // Set GPS data
+  if (GPSModule.hasValidFix()) {
+    PayloadModule.setSpeed(GPSModule.getSpeed());
+    PayloadModule.setDirection(GPSModule.getDirection());
+    PayloadModule.setLocation(GPSModule.getLatitude(), GPSModule.getLongitude());
+  }
+  
+  // Set fuel level
+  PayloadModule.setFuel(FuelSensor.getFuelLevel());
+  
+  // Set door state
+  PayloadModule.setDoor(DoorSensor.isOpen() ? "OPEN" : "CLOSE");
+  
+  // Set temperature
+  PayloadModule.setTemperature(TemperatureSensor.getTemperature());
+  
+  // Set accelerometer data
+  PayloadModule.setAccelerometer(
+    AccelerometerGyro.getAccX(),
+    AccelerometerGyro.getAccY(),
+    AccelerometerGyro.getAccZ()
+  );
+  
+  // Set gyroscope data
+  PayloadModule.setGyroscope(
+    AccelerometerGyro.getGyroX(),
+    AccelerometerGyro.getGyroY(),
+    AccelerometerGyro.getGyroZ()
+  );
+  
+  // Set emergency state
+  PayloadModule.setEmergency(EmergencyButton.isPressed() ? "TRUE" : "FALSE");
 } 

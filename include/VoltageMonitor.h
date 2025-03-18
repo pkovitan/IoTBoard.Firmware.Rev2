@@ -19,11 +19,18 @@ public:
     // Main update loop - should be called in main loop
     void update();
     
+    // Get voltage values (alternative names)
+    float getVinVoltage();
+    float getBatteryVoltage();
+    
+    // Event callbacks
+    void onVoltageChange(void (*callback)(float, float));
+    
 private:
     MCP342x adc;
     
-    float vinVoltage;
-    float vbattVoltage;
+    float _vinVoltage;
+    float _vbattVoltage;
     unsigned long lastReadTime;
     
     // Read interval in milliseconds
