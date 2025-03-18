@@ -16,6 +16,7 @@
 #include "EngineSensor.h"
 #include "TemperatureSensor.h"
 #include "VoltageMonitor.h"
+#include "FuelSensor.h"
 
 // Callback function for emergency button press
 void emergencyButtonPressed() {
@@ -55,6 +56,20 @@ void temperatureChanged(float temperature) {
   if (temperature > 80.0) {
     LedIndicator.setRed(true);
     Buzzer.beep(1000); // Beep for 1 second
+  }
+}
+
+// Callback function for fuel level change
+void fuelLevelChanged(float fuelLevel) {
+  Serial.print("Fuel level changed to: ");
+  Serial.print(fuelLevel);
+  Serial.println("%");
+  
+  // You can add additional actions here when fuel level changes
+  // For example, turn on warning if fuel level is too low
+  if (fuelLevel < 10.0) {
+    LedIndicator.setOrange(true);
+    Buzzer.beep(500); // Beep for 0.5 second
   }
 }
 
@@ -98,6 +113,11 @@ void setup() {
     Serial.println("Failed to initialize Voltage Monitor!");
   }
   
+  // Initialize Fuel Sensor
+  if (!FuelSensor.begin()) {
+    Serial.println("Failed to initialize Fuel Sensor!");
+  }
+  
   // Set callback for emergency button press
   EmergencyButton.onPress(emergencyButtonPressed);
   
@@ -114,6 +134,12 @@ void setup() {
   
   // Set temperature threshold to 2 degrees (callback will be triggered when temperature changes by 2°C or more)
   TemperatureSensor.setThreshold(2.0);
+  
+  // Set callback for fuel sensor
+  FuelSensor.onFuelLevelChange(fuelLevelChanged);
+  
+  // Set fuel threshold to 5% (callback will be triggered when fuel level changes by 5% or more)
+  FuelSensor.setThreshold(5.0);
   
   // Test double beep at startup
   Buzzer.doubleBeep();
@@ -147,6 +173,9 @@ void loop() {
   // Update Voltage Monitor state
   VoltageMonitor.update();
   
+  // Update Fuel Sensor state
+  FuelSensor.update();
+  
   // Test emergency button state
   if (EmergencyButton.isPressed()) {
     Serial.println("Emergency Button is currently pressed!");
@@ -172,6 +201,13 @@ void loop() {
   float currentTemp = TemperatureSensor.getTemperature();
   if (currentTemp > 90.0) {
     // Temperature is critically high
+    // Take emergency action
+  }
+  
+  // You can also check fuel level directly if needed
+  float currentFuel = FuelSensor.getFuelLevel();
+  if (currentFuel < 5.0) {
+    // Fuel level is critically low
     // Take emergency action
   }
   
