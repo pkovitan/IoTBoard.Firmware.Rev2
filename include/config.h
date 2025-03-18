@@ -23,7 +23,7 @@
 #define EMERGENCY_SW_PIN 2     // MCP23008 pin 2
 #define DOOR_SW_PIN 1         // MCP23008 pin 1
 #define GYRO_INT_PIN 4        // MCP23008 pin 4
-#define ACC_SEN_PIN 3         // MCP23008 pin 3
+#define ENGINE_SEN_PIN 3      // MCP23008 pin 3 for engine detection
 
 // SIM7600 pins
 #define RXD2 16
