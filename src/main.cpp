@@ -21,6 +21,7 @@
 #include "AccelerometerGyro.h"
 #include "GPSModule.h"  // Add GPS Module header
 #include "PayloadModule.h" // Add Payload Module header
+#include "SDCardLogger.h" // Add SD Card Logger header
 
 // Function prototype
 void updatePayloadData();
@@ -200,6 +201,11 @@ void setup() {
   // Set auto print interval to 1 second
   PayloadModule.setPrintInterval(1000);
   
+  // Initialize SD Card Logger
+  if (!SDCardLogger.begin(5)) { // SD card CS pin is 5
+    Serial.println("Failed to initialize SD Card Logger!");
+  }
+  
   // Set callback for emergency button press
   EmergencyButton.onPress(emergencyButtonPressed);
   
@@ -287,6 +293,23 @@ void loop() {
   
   // Update Payload Module state
   PayloadModule.update();
+  
+  // Log payload to SD card if available
+  if (SDCardLogger.isCardMounted()) {
+    // Update file name based on current time from GPS
+    if (GPSModule.hasValidFix()) {
+      SDCardLogger.updateFileName(GPSModule.getTime());
+    }
+    
+    // Write payload to SD card
+    SDCardLogger.writeLog(PayloadModule.getPayload());
+    
+    // Print SD card statistics
+    Serial.printf("SD Card: %lu MB used of %lu MB total (%lu MB free)\n", 
+                 SDCardLogger.getUsedBytes() / (1024 * 1024),
+                 SDCardLogger.getTotalBytes() / (1024 * 1024),
+                 SDCardLogger.getFreeBytes() / (1024 * 1024));
+  }
   
   // Test emergency button state
   if (EmergencyButton.isPressed()) {
