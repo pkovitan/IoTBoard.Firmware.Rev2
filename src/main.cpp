@@ -15,6 +15,7 @@
 #include "DoorSensor.h"
 #include "EngineSensor.h"
 #include "TemperatureSensor.h"
+#include "VoltageMonitor.h"
 
 // Callback function for emergency button press
 void emergencyButtonPressed() {
@@ -92,6 +93,11 @@ void setup() {
     Serial.println("Failed to initialize Temperature Sensor!");
   }
   
+  // Initialize Voltage Monitor
+  if (!VoltageMonitor.begin()) {
+    Serial.println("Failed to initialize Voltage Monitor!");
+  }
+  
   // Set callback for emergency button press
   EmergencyButton.onPress(emergencyButtonPressed);
   
@@ -137,6 +143,9 @@ void loop() {
   
   // Update Temperature Sensor state
   TemperatureSensor.update();
+  
+  // Update Voltage Monitor state
+  VoltageMonitor.update();
   
   // Test emergency button state
   if (EmergencyButton.isPressed()) {
