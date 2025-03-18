@@ -19,6 +19,7 @@
 #include "FuelSensor.h"
 #include "CardReader.h"
 #include "AccelerometerGyro.h"
+#include "GPSModule.h"  // Add GPS Module header
 
 // Callback function for emergency button press
 void emergencyButtonPressed() {
@@ -174,6 +175,11 @@ void setup() {
     Serial.println("Failed to initialize Accelerometer & Gyro!");
   }
   
+  // Initialize GPS Module
+  if (!GPSModule.begin()) {
+    Serial.println("Failed to initialize GPS Module!");
+  }
+  
   // Set callback for emergency button press
   EmergencyButton.onPress(emergencyButtonPressed);
   
@@ -247,6 +253,9 @@ void loop() {
   // Update Accelerometer & Gyro state
   AccelerometerGyro.update();
   
+  // Update GPS Module state
+  GPSModule.update();
+  
   // Test emergency button state
   if (EmergencyButton.isPressed()) {
     Serial.println("Emergency Button is currently pressed!");
@@ -287,6 +296,21 @@ void loop() {
   if (strcmp(currentCardID, "00000000") != 0) {
     // A card has been detected
     // Take appropriate action
+  }
+  
+  // You can also check GPS data directly if needed
+  if (GPSModule.hasValidFix()) {
+    double lat = GPSModule.getLatitude();
+    double lon = GPSModule.getLongitude();
+    float speed = GPSModule.getSpeed();
+    
+    // Check if vehicle is speeding
+    if (speed > 120.0) {
+      // Vehicle is speeding
+      // Take appropriate action
+      LedIndicator.setRed(true);
+      Buzzer.beep(500); // Warning beep
+    }
   }
   
   // You can also check accelerometer values directly if needed
