@@ -18,6 +18,7 @@
 #include "VoltageMonitor.h"
 #include "FuelSensor.h"
 #include "CardReader.h"
+#include "AccelerometerGyro.h"
 
 // Callback function for emergency button press
 void emergencyButtonPressed() {
@@ -89,6 +90,35 @@ void cardDetected(const char* cardID) {
   LedIndicator.setRed(false);
 }
 
+// Callback function for motion detection
+void motionDetected(float accX, float accY, float accZ, float gyroX, float gyroY, float gyroZ) {
+  Serial.println("Significant motion detected!");
+  Serial.print("Acceleration: X=");
+  Serial.print(accX);
+  Serial.print("g, Y=");
+  Serial.print(accY);
+  Serial.print("g, Z=");
+  Serial.print(accZ);
+  Serial.println("g");
+  
+  Serial.print("Gyroscope: X=");
+  Serial.print(gyroX);
+  Serial.print("°/s, Y=");
+  Serial.print(gyroY);
+  Serial.print("°/s, Z=");
+  Serial.print(gyroZ);
+  Serial.println("°/s");
+  
+  // You can add additional actions here when motion is detected
+  // For example, alert if there's a sudden impact or tilt
+  if (abs(accX) > 1.5 || abs(accY) > 1.5 || abs(accZ) > 1.5) {
+    LedIndicator.setRed(true);
+    Buzzer.beep(300); // Beep for impact detection
+    delay(1000);
+    LedIndicator.setRed(false);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println("\n\n=== INTrackG v1.0 ===");
@@ -139,6 +169,11 @@ void setup() {
     Serial.println("Failed to initialize Card Reader!");
   }
   
+  // Initialize Accelerometer & Gyro
+  if (!AccelerometerGyro.begin()) {
+    Serial.println("Failed to initialize Accelerometer & Gyro!");
+  }
+  
   // Set callback for emergency button press
   EmergencyButton.onPress(emergencyButtonPressed);
   
@@ -164,6 +199,12 @@ void setup() {
   
   // Set callback for card reader
   CardReader.onCardDetected(cardDetected);
+  
+  // Set callback for accelerometer/gyro
+  AccelerometerGyro.onMotionDetected(motionDetected);
+  
+  // Set motion threshold to 0.5g (callback will be triggered when acceleration changes by 0.5g or more)
+  AccelerometerGyro.setThreshold(0.5);
   
   // Test double beep at startup
   Buzzer.doubleBeep();
@@ -202,6 +243,9 @@ void loop() {
   
   // Update Card Reader state
   CardReader.update();
+  
+  // Update Accelerometer & Gyro state
+  AccelerometerGyro.update();
   
   // Test emergency button state
   if (EmergencyButton.isPressed()) {
@@ -242,6 +286,17 @@ void loop() {
   const char* currentCardID = CardReader.getCardID();
   if (strcmp(currentCardID, "00000000") != 0) {
     // A card has been detected
+    // Take appropriate action
+  }
+  
+  // You can also check accelerometer values directly if needed
+  float currentAccX = AccelerometerGyro.getAccX();
+  float currentAccY = AccelerometerGyro.getAccY();
+  float currentAccZ = AccelerometerGyro.getAccZ();
+  
+  // Check for vehicle tilt
+  if (abs(currentAccY) > 0.5) {
+    // Vehicle is tilted sideways
     // Take appropriate action
   }
   
