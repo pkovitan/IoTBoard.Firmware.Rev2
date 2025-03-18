@@ -12,10 +12,20 @@
 #include "LEDIndicator.h"
 #include "Buzzer.h"
 #include "EmergencyButton.h"
+#include "DoorSensor.h"
 
 // Callback function for emergency button press
 void emergencyButtonPressed() {
   Serial.println("Emergency Button Pressed!");
+}
+
+// Callback functions for door sensor
+void doorOpened() {
+  Serial.println("Door Opened!");
+}
+
+void doorClosed() {
+  Serial.println("Door Closed!");
 }
 
 void setup() {
@@ -38,8 +48,17 @@ void setup() {
     Serial.println("Failed to initialize Emergency Button!");
   }
   
+  // Initialize Door Sensor
+  if (!DoorSensor.begin()) {
+    Serial.println("Failed to initialize Door Sensor!");
+  }
+  
   // Set callback for emergency button press
   EmergencyButton.onPress(emergencyButtonPressed);
+  
+  // Set callbacks for door sensor
+  DoorSensor.onOpen(doorOpened);
+  DoorSensor.onClose(doorClosed);
   
   // Test double beep at startup
   Buzzer.doubleBeep();
@@ -61,11 +80,21 @@ void loop() {
   // Update Emergency Button state
   EmergencyButton.update();
   
+  // Update Door Sensor state
+  DoorSensor.update();
+  
   // Test emergency button state
   if (EmergencyButton.isPressed()) {
     Serial.println("Emergency Button is currently pressed!");
     // Reset the emergency state after handling it
     EmergencyButton.reset();
+  }
+  
+  // You can also check door state directly if needed
+  if (DoorSensor.isOpen()) {
+    // Door is currently open
+  } else {
+    // Door is currently closed
   }
   
   // Small delay to prevent CPU hogging
