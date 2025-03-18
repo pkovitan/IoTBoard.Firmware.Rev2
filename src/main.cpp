@@ -17,6 +17,7 @@
 #include "TemperatureSensor.h"
 #include "VoltageMonitor.h"
 #include "FuelSensor.h"
+#include "CardReader.h"
 
 // Callback function for emergency button press
 void emergencyButtonPressed() {
@@ -73,6 +74,21 @@ void fuelLevelChanged(float fuelLevel) {
   }
 }
 
+// Callback function for card detection
+void cardDetected(const char* cardID) {
+  Serial.print("Card detected: ");
+  Serial.println(cardID);
+  
+  // You can add additional actions here when a card is detected
+  // For example, validate the card ID against a list of authorized cards
+  LedIndicator.setRed(true);
+  Buzzer.beep(200); // Short beep for card detection
+  
+  // Turn off green LED after 2 seconds
+  delay(2000);
+  LedIndicator.setRed(false);
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println("\n\n=== INTrackG v1.0 ===");
@@ -118,6 +134,11 @@ void setup() {
     Serial.println("Failed to initialize Fuel Sensor!");
   }
   
+  // Initialize Card Reader
+  if (!CardReader.begin()) {
+    Serial.println("Failed to initialize Card Reader!");
+  }
+  
   // Set callback for emergency button press
   EmergencyButton.onPress(emergencyButtonPressed);
   
@@ -140,6 +161,9 @@ void setup() {
   
   // Set fuel threshold to 5% (callback will be triggered when fuel level changes by 5% or more)
   FuelSensor.setThreshold(5.0);
+  
+  // Set callback for card reader
+  CardReader.onCardDetected(cardDetected);
   
   // Test double beep at startup
   Buzzer.doubleBeep();
@@ -176,6 +200,9 @@ void loop() {
   // Update Fuel Sensor state
   FuelSensor.update();
   
+  // Update Card Reader state
+  CardReader.update();
+  
   // Test emergency button state
   if (EmergencyButton.isPressed()) {
     Serial.println("Emergency Button is currently pressed!");
@@ -209,6 +236,13 @@ void loop() {
   if (currentFuel < 5.0) {
     // Fuel level is critically low
     // Take emergency action
+  }
+  
+  // You can also check card ID directly if needed
+  const char* currentCardID = CardReader.getCardID();
+  if (strcmp(currentCardID, "00000000") != 0) {
+    // A card has been detected
+    // Take appropriate action
   }
   
   // Small delay to prevent CPU hogging
