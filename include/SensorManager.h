@@ -15,9 +15,15 @@
 #include "AccelerometerGyro.h"
 #include "EmergencyButton.h"
 
-class PayloadModuleClass {
+// Payload formats supported by SensorManager
+enum PayloadFormat {
+    JSON_FORMAT,
+    NMEA_FORMAT
+};
+
+class SensorManagerClass {
 public:
-    PayloadModuleClass();
+    SensorManagerClass();
     
     // Initialization
     bool begin();
@@ -25,41 +31,28 @@ public:
     // Main update loop - should be called in main loop
     void update();
     
-    // Update sensor data
-    void updateSensorData();
+    // Read data from all sensors
+    void readAllSensors();
     
-    // Set payload data
-    void setFleet(const char* fleet);
-    void setID(const char* id);
-    void setEvent(const char* event);
-    void setCardReader(const char* cardID);
-    void setVoltageIn(float vin);
-    void setVoltageBattery(float vbat);
-    void setEngine(const char* engine);
-    void setSpeed(float speed);
-    void setDirection(float direction);
-    void setFuel(float fuel);
-    void setLocation(double latitude, double longitude);
-    void setDoor(const char* door);
-    void setTemperature(float temp);
-    void setAccelerometer(float x, float y, float z);
-    void setGyroscope(float x, float y, float z);
-    void setEmergency(const char* emergency);
+    // Get payload data in specified format
+    const char* getPayload(PayloadFormat format = JSON_FORMAT);
     
-    // Get payload as JSON string
-    const char* getPayload();
-    
-    // Print payload to Serial
-    void printPayload();
+    // Print payload to Serial in specified format
+    void printPayload(PayloadFormat format = JSON_FORMAT);
     
     // Enable/disable automatic printing
     void enableAutoPrint(bool enable);
     
     // Set print interval
     void setPrintInterval(unsigned long interval);
+    
+    // Set fleet and ID information
+    void setFleet(const char* fleet);
+    void setID(const char* id);
+    void setEvent(const char* event);
 
 private:
-    // Payload data
+    // Sensor data
     char fleet[32];
     char id[32];
     uint16_t seq;
@@ -80,20 +73,26 @@ private:
     float gyrX, gyrY, gyrZ;
     char emergency[8];
     
-    // Payload buffer
-    char payload[1024];
+    // Payload buffers
+    char jsonPayload[1024];
+    char nmeaPayload[1024];
     
     // Auto print settings
     bool autoPrintEnabled;
     unsigned long printInterval;
     unsigned long lastPrintTime;
+    PayloadFormat autoPrintFormat;
     
-    // Update payload string
-    void updatePayload();
+    // Update payload strings
+    void updateJsonPayload();
+    void updateNmeaPayload();
     
     // Update time string
     void updateTimeString();
+    
+    // NMEA checksum calculation
+    uint8_t calculateNmeaChecksum(const char* sentence);
 };
 
 // Global instance
-extern PayloadModuleClass PayloadModule; 
+extern SensorManagerClass SensorManager; 

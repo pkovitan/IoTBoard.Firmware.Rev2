@@ -20,8 +20,8 @@
 #include "CardReader.h"
 #include "AccelerometerGyro.h"
 #include "GPSModule.h"  // Add GPS Module header
-#include "PayloadModule.h" // Add Payload Module header
-#include "SDCardLogger.h" // Add SD Card Logger header
+#include "SensorManager.h" // Add Sensor Manager header
+#include "SDLogger.h" // Add SD Card Logger header
 
 // Function prototype
 void updatePayloadData();
@@ -133,6 +133,11 @@ void motionDetected(float accX, float accY, float accZ, float gyroX, float gyroY
   }
 }
 
+// Callback function for reading log file
+void printLogLine(const char* line) {
+    Serial.println(line);
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println("\n\n=== INTrackG v1.0 ===");
@@ -193,17 +198,25 @@ void setup() {
     Serial.println("Failed to initialize GPS Module!");
   }
   
-  // Initialize Payload Module
-  if (!PayloadModule.begin()) {
-    Serial.println("Failed to initialize Payload Module!");
+  // Initialize Sensor Manager
+  if (!SensorManager.begin()) {
+    Serial.println("Failed to initialize Sensor Manager!");
   }
   
   // Set auto print interval to 1 second
-  PayloadModule.setPrintInterval(1000);
+  SensorManager.setPrintInterval(1000);
   
   // Initialize SD Card Logger
-  if (!SDCardLogger.begin(5)) { // SD card CS pin is 5
+  if (!SDLogger.begin(5)) { // SD card CS pin is 5
     Serial.println("Failed to initialize SD Card Logger!");
+  } else {
+    // Format SD card at startup
+    Serial.println("Formatting SD card...");
+    if (SDLogger.formatSDCard()) {
+      Serial.println("SD card formatted successfully");
+    } else {
+      Serial.println("Failed to format SD card");
+    }
   }
   
   // Set callback for emergency button press
@@ -246,192 +259,65 @@ void setup() {
   
   // Test double beep at startup
   Buzzer.doubleBeep();
-  
-  // Initialize system components
-  System.init();
 }
 
 void loop() {
-  // Main system loop
-  System.update();
-  
-  // Update LED states
-  LedIndicator.update();
-  
-  // Update Buzzer states
-  Buzzer.update();
-  
-  // Update Emergency Button state
-  EmergencyButton.update();
-  
-  // Update Door Sensor state
-  DoorSensor.update();
-  
-  // Update Engine Sensor state
-  EngineSensor.update();
-  
-  // Update Temperature Sensor state
-  TemperatureSensor.update();
-  
-  // Update Voltage Monitor state
-  VoltageMonitor.update();
-  
-  // Update Fuel Sensor state
-  FuelSensor.update();
-  
-  // Update Card Reader state
-  CardReader.update();
-  
-  // Update Accelerometer & Gyro state
-  AccelerometerGyro.update();
-  
-  // Update GPS Module state
-  GPSModule.update();
-  
-  // Update Payload Module with current sensor values
-  updatePayloadData();
-  
-  // Update Payload Module state
-  PayloadModule.update();
-  
-  // Log payload to SD card if available
-  if (SDCardLogger.isCardMounted()) {
-    // Update file name based on current time from GPS
-    if (GPSModule.hasValidFix()) {
-      SDCardLogger.updateFileName(GPSModule.getTime());
+    // Update all sensors
+    CardReader.update();
+    VoltageMonitor.update();
+    EngineSensor.update();
+    GPSModule.update();
+    FuelSensor.update();
+    DoorSensor.update();
+    TemperatureSensor.update();
+    AccelerometerGyro.update();
+    EmergencyButton.update();
+    
+    // Update SensorManager
+    SensorManager.update();
+    
+    // Toggle between JSON and NMEA formats every 5 seconds
+    static unsigned long lastFormatToggle = 0;
+    static bool useJsonFormat = true;
+    if (millis() - lastFormatToggle >= 5000) {
+        lastFormatToggle = millis();
+        useJsonFormat = !useJsonFormat;
     }
     
-    // Write payload to SD card
-    SDCardLogger.writeLog(PayloadModule.getPayload());
+    // Get current payload based on selected format
+    const char* payload = SensorManager.getPayload(useJsonFormat ? JSON_FORMAT : NMEA_FORMAT);
     
-    // Print SD card statistics
-    Serial.printf("SD Card: %lu MB used of %lu MB total (%lu MB free)\n", 
-                 SDCardLogger.getUsedBytes() / (1024 * 1024),
-                 SDCardLogger.getTotalBytes() / (1024 * 1024),
-                 SDCardLogger.getFreeBytes() / (1024 * 1024));
-  }
-  
-  // Test emergency button state
-  if (EmergencyButton.isPressed()) {
-    Serial.println("Emergency Button is currently pressed!");
-    // Reset the emergency state after handling it
-    EmergencyButton.reset();
-  }
-  
-  // You can also check door state directly if needed
-  if (DoorSensor.isOpen()) {
-    // Door is currently open
-  } else {
-    // Door is currently closed
-  }
-  
-  // You can also check engine state directly if needed
-  if (EngineSensor.isOn()) {
-    // Engine is currently running
-  } else {
-    // Engine is currently off
-  }
-  
-  // You can also check temperature directly if needed
-  float currentTemp = TemperatureSensor.getTemperature();
-  if (currentTemp > 90.0) {
-    // Temperature is critically high
-    // Take emergency action
-  }
-  
-  // You can also check fuel level directly if needed
-  float currentFuel = FuelSensor.getFuelLevel();
-  if (currentFuel < 5.0) {
-    // Fuel level is critically low
-    // Take emergency action
-  }
-  
-  // You can also check card ID directly if needed
-  const char* currentCardID = CardReader.getCardID();
-  if (strcmp(currentCardID, "00000000") != 0) {
-    // A card has been detected
-    // Take appropriate action
-  }
-  
-  // You can also check GPS data directly if needed
-  if (GPSModule.hasValidFix()) {
-    double lat = GPSModule.getLatitude();
-    double lon = GPSModule.getLongitude();
-    float speed = GPSModule.getSpeed();
+    // Print payload to serial
+    Serial.println(payload);
     
-    // Check if vehicle is speeding
-    if (speed > 120.0) {
-      // Vehicle is speeding
-      // Take appropriate action
-      LedIndicator.setRed(true);
-      Buzzer.beep(500); // Warning beep
+    // Log to SD card
+    if (SDLogger.isCardMounted()) {
+        SDLogger.writeLog(payload);
+        
+        // Print SD card statistics and log contents every 10 seconds
+        static unsigned long lastStatsPrint = 0;
+        if (millis() - lastStatsPrint >= 10 * 1000) { // 10 seconds in milliseconds
+            lastStatsPrint = millis();
+            
+            Serial.println("\n=== SD Card Statistics ===");
+            Serial.printf("Used: %lluMB / Total: %lluMB\n", 
+                SDLogger.getUsedBytes() / (1024 * 1024), 
+                SDLogger.getTotalBytes() / (1024 * 1024)
+            );
+            Serial.println("=====================\n");
+            
+            // Read and display log file contents
+            Serial.println("\n=== Log File Contents ===");
+            Serial.printf("Current file: %s\n", SDLogger.getCurrentFileName());
+            if (SDLogger.readLog(SDLogger.getCurrentFileName(), printLogLine)) {
+                Serial.println("Log file read successfully");
+            } else {
+                Serial.println("Failed to read log file");
+            }
+            Serial.println("=====================\n");
+        }
     }
-  }
-  
-  // You can also check accelerometer values directly if needed
-  float currentAccX = AccelerometerGyro.getAccX();
-  float currentAccY = AccelerometerGyro.getAccY();
-  float currentAccZ = AccelerometerGyro.getAccZ();
-  
-  // Check for vehicle tilt
-  if (abs(currentAccY) > 0.5) {
-    // Vehicle is tilted sideways
-    // Take appropriate action
-  }
-  
-  // Small delay to prevent CPU hogging
-  delay(10);
-}
-
-// Function to update payload data from all sensors
-void updatePayloadData() {
-  // Set ID and fleet (could be loaded from configuration)
-  PayloadModule.setID("Vehicle01");
-  PayloadModule.setFleet("WillDeleteLater");
-  
-  // Set event (could be determined by system state)
-  PayloadModule.setEvent("WillDeleteLater");
-  
-  // Set card reader data
-  PayloadModule.setCardReader(CardReader.getCardID());
-  
-  // Set voltage data
-  PayloadModule.setVoltageIn(VoltageMonitor.getVinVoltage());
-  PayloadModule.setVoltageBattery(VoltageMonitor.getBatteryVoltage());
-  
-  // Set engine state
-  PayloadModule.setEngine(EngineSensor.isOn() ? "ON" : "OFF");
-  
-  // Set GPS data
-  if (GPSModule.hasValidFix()) {
-    PayloadModule.setSpeed(GPSModule.getSpeed());
-    PayloadModule.setDirection(GPSModule.getDirection());
-    PayloadModule.setLocation(GPSModule.getLatitude(), GPSModule.getLongitude());
-  }
-  
-  // Set fuel level
-  PayloadModule.setFuel(FuelSensor.getFuelLevel());
-  
-  // Set door state
-  PayloadModule.setDoor(DoorSensor.isOpen() ? "OPEN" : "CLOSE");
-  
-  // Set temperature
-  PayloadModule.setTemperature(TemperatureSensor.getTemperature());
-  
-  // Set accelerometer data
-  PayloadModule.setAccelerometer(
-    AccelerometerGyro.getAccX(),
-    AccelerometerGyro.getAccY(),
-    AccelerometerGyro.getAccZ()
-  );
-  
-  // Set gyroscope data
-  PayloadModule.setGyroscope(
-    AccelerometerGyro.getGyroX(),
-    AccelerometerGyro.getGyroY(),
-    AccelerometerGyro.getGyroZ()
-  );
-  
-  // Set emergency state
-  PayloadModule.setEmergency(EmergencyButton.isPressed() ? "TRUE" : "FALSE");
+    
+    // Small delay to prevent overwhelming the serial output
+    delay(100);
 } 

@@ -1,9 +1,9 @@
-#include "SDCardLogger.h"
+#include "SDLogger.h"
 
 // Create global instance
-SDCardLoggerClass SDCardLogger;
+SDLoggerClass SDLogger;
 
-SDCardLoggerClass::SDCardLoggerClass() {
+SDLoggerClass::SDLoggerClass() {
     cardMounted = false;
     csPin = 5; // Default CS pin
     strcpy(currentFileName, "/log.txt");
@@ -18,7 +18,7 @@ SDCardLoggerClass::SDCardLoggerClass() {
     currentFileSize = 0;
 }
 
-bool SDCardLoggerClass::begin(uint8_t csPin) {
+bool SDLoggerClass::begin(uint8_t csPin) {
     this->csPin = csPin;
     
     Serial.print("Initializing SD card...");
@@ -62,7 +62,7 @@ bool SDCardLoggerClass::begin(uint8_t csPin) {
     return true;
 }
 
-bool SDCardLoggerClass::writeLog(const char* payload) {
+bool SDLoggerClass::writeLog(const char* payload) {
     if (!cardMounted) {
         Serial.println("SD Card not mounted. Cannot write log.");
         return false;
@@ -101,7 +101,7 @@ bool SDCardLoggerClass::writeLog(const char* payload) {
     }
 }
 
-bool SDCardLoggerClass::readLog(const char* filename, void (*callback)(const char* line)) {
+bool SDLoggerClass::readLog(const char* filename, void (*callback)(const char* line)) {
     if (!cardMounted) {
         Serial.println("SD Card not mounted. Cannot read log.");
         return false;
@@ -128,39 +128,39 @@ bool SDCardLoggerClass::readLog(const char* filename, void (*callback)(const cha
     return true;
 }
 
-bool SDCardLoggerClass::isCardMounted() {
+bool SDLoggerClass::isCardMounted() {
     return cardMounted;
 }
 
-uint64_t SDCardLoggerClass::getTotalBytes() {
+uint64_t SDLoggerClass::getTotalBytes() {
     return totalBytes;
 }
 
-uint64_t SDCardLoggerClass::getUsedBytes() {
+uint64_t SDLoggerClass::getUsedBytes() {
     return usedBytes;
 }
 
-uint64_t SDCardLoggerClass::getFreeBytes() {
+uint64_t SDLoggerClass::getFreeBytes() {
     return freeBytes;
 }
 
-const char* SDCardLoggerClass::getCurrentFileName() {
+const char* SDLoggerClass::getCurrentFileName() {
     return currentFileName;
 }
 
-void SDCardLoggerClass::setFileNameFormat(const char* format) {
+void SDLoggerClass::setFileNameFormat(const char* format) {
     strcpy(fileNameFormat, format);
 }
 
-void SDCardLoggerClass::setMaxFileSize(uint64_t size) {
+void SDLoggerClass::setMaxFileSize(uint64_t size) {
     maxFileSize = size;
 }
 
-void SDCardLoggerClass::setMinFreeSpace(uint64_t size) {
+void SDLoggerClass::setMinFreeSpace(uint64_t size) {
     minFreeSpace = size;
 }
 
-void SDCardLoggerClass::updateFileName(const char* timeString) {
+void SDLoggerClass::updateFileName(const char* timeString) {
     // Format: "2021-12-31T13:00:00.000Z"
     // Extract date part for filename
     char dateStr[11]; // YYYY-MM-DD\0
@@ -176,7 +176,7 @@ void SDCardLoggerClass::updateFileName(const char* timeString) {
     Serial.printf("Current log file: %s\n", currentFileName);
 }
 
-void SDCardLoggerClass::updateStatistics() {
+void SDLoggerClass::updateStatistics() {
     if (cardMounted) {
         totalBytes = SD.totalBytes();
         usedBytes = SD.usedBytes();
@@ -184,15 +184,15 @@ void SDCardLoggerClass::updateStatistics() {
     }
 }
 
-bool SDCardLoggerClass::checkFileSize() {
+bool SDLoggerClass::checkFileSize() {
     return currentFileSize >= maxFileSize;
 }
 
-bool SDCardLoggerClass::checkFreeSpace() {
+bool SDLoggerClass::checkFreeSpace() {
     return freeBytes < minFreeSpace;
 }
 
-bool SDCardLoggerClass::rotateFile() {
+bool SDLoggerClass::rotateFile() {
     // Get current file info
     File file = SD.open(currentFileName, FILE_READ);
     if (!file) {
@@ -236,6 +236,105 @@ bool SDCardLoggerClass::rotateFile() {
     return true;
 }
 
-void SDCardLoggerClass::update() {
+void SDLoggerClass::update() {
     // Add any periodic update logic here if needed
+}
+
+bool SDLoggerClass::formatSDCard() {
+    if (!cardMounted) {
+        Serial.println("Error: SD card not mounted");
+        return false;
+    }
+
+    Serial.println("Starting SD card format...");
+    Serial.println("Opening root directory...");
+
+    // Open root directory
+    File root = SD.open("/");
+    if (!root) {
+        Serial.println("Error: Failed to open root directory");
+        return false;
+    }
+
+    Serial.println("Root directory opened successfully");
+    bool allFilesDeleted = true;
+    int fileCount = 0;
+    
+    // Delete all files in root directory
+    Serial.println("Scanning root directory...");
+    File file = root.openNextFile();
+    while (file) {
+        fileCount++;
+        String filePath = String("/") + file.name();
+        Serial.printf("Processing file %d: %s\n", fileCount, filePath.c_str());
+        
+        if (file.isDirectory()) {
+            Serial.printf("Found directory: %s\n", filePath.c_str());
+            // Recursively delete files in subdirectories
+            if (!deleteDirectory(filePath)) {
+                allFilesDeleted = false;
+            }
+        } else {
+            Serial.printf("Deleting file: %s\n", filePath.c_str());
+            // Delete file
+            if (!SD.remove(filePath.c_str())) {
+                Serial.printf("Failed to delete file: %s\n", filePath.c_str());
+                allFilesDeleted = false;
+            }
+        }
+        file = root.openNextFile();
+    }
+
+    // Close root directory
+    root.close();
+    Serial.printf("Processed %d files/directories\n", fileCount);
+
+    // Update statistics
+    updateStatistics();
+    Serial.println("SD card statistics updated");
+
+    if (allFilesDeleted) {
+        Serial.println("SD card format completed successfully");
+    } else {
+        Serial.println("SD card format completed with some errors");
+    }
+
+    return allFilesDeleted;
+}
+
+// Helper function to recursively delete directory contents
+bool SDLoggerClass::deleteDirectory(const String& path) {
+    Serial.printf("Opening directory: %s\n", path.c_str());
+    File dir = SD.open(path);
+    if (!dir) {
+        Serial.printf("Error: Failed to open directory: %s\n", path.c_str());
+        return false;
+    }
+
+    bool allFilesDeleted = true;
+    int fileCount = 0;
+    
+    while (File file = dir.openNextFile()) {
+        fileCount++;
+        String filePath = path + "/" + file.name();
+        Serial.printf("Processing file %d in %s: %s\n", fileCount, path.c_str(), filePath.c_str());
+        
+        if (file.isDirectory()) {
+            Serial.printf("Found subdirectory: %s\n", filePath.c_str());
+            if (!deleteDirectory(filePath)) {
+                allFilesDeleted = false;
+            }
+        } else {
+            Serial.printf("Deleting file: %s\n", filePath.c_str());
+            if (!SD.remove(filePath.c_str())) {
+                Serial.printf("Failed to delete file: %s\n", filePath.c_str());
+                allFilesDeleted = false;
+            }
+        }
+    }
+    
+    dir.close();
+    Serial.printf("Processed %d files in directory: %s\n", fileCount, path.c_str());
+
+    return allFilesDeleted;
 } 

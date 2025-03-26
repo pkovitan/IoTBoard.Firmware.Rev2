@@ -50,6 +50,9 @@ bool PayloadModuleClass::begin() {
 }
 
 void PayloadModuleClass::update() {
+    // Update sensor data
+    updateSensorData();
+    
     // Update time string
     updateTimeString();
     
@@ -62,6 +65,51 @@ void PayloadModuleClass::update() {
         lastPrintTime = currentTime;
         printPayload();
     }
+}
+
+void PayloadModuleClass::updateSensorData() {
+    // Set card reader data
+    setCardReader(CardReader.getCardID());
+    
+    // Set voltage data
+    setVoltageIn(VoltageMonitor.getVinVoltage());
+    setVoltageBattery(VoltageMonitor.getBatteryVoltage());
+    
+    // Set engine state
+    setEngine(EngineSensor.isOn() ? "ON" : "OFF");
+    
+    // Set GPS data
+    if (GPSModule.hasValidFix()) {
+        setSpeed(GPSModule.getSpeed());
+        setDirection(GPSModule.getDirection());
+        setLocation(GPSModule.getLatitude(), GPSModule.getLongitude());
+    }
+    
+    // Set fuel level
+    setFuel(FuelSensor.getFuelLevel());
+    
+    // Set door state
+    setDoor(DoorSensor.isOpen() ? "OPEN" : "CLOSE");
+    
+    // Set temperature
+    setTemperature(TemperatureSensor.getTemperature());
+    
+    // Set accelerometer data
+    setAccelerometer(
+        AccelerometerGyro.getAccX(),
+        AccelerometerGyro.getAccY(),
+        AccelerometerGyro.getAccZ()
+    );
+    
+    // Set gyroscope data
+    setGyroscope(
+        AccelerometerGyro.getGyroX(),
+        AccelerometerGyro.getGyroY(),
+        AccelerometerGyro.getGyroZ()
+    );
+    
+    // Set emergency state
+    setEmergency(EmergencyButton.isPressed() ? "TRUE" : "FALSE");
 }
 
 void PayloadModuleClass::setFleet(const char* fleet) {

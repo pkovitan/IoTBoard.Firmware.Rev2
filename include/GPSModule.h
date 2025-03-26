@@ -23,6 +23,9 @@ public:
     // Check if GPS has a valid fix
     bool hasValidFix();
     
+    // Check if GPS has valid time (same as hasValidFix for now)
+    bool hasValidTime() { return hasValidFix(); }
+    
     // Event callbacks
     void onLocationChange(void (*callback)(double lat, double lon));
     
