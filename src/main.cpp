@@ -7,10 +7,6 @@
  */
 
 #include <Arduino.h>
-#include <WiFi.h>
-#include <PubSubClient.h>
-#include <ArduinoJson.h>
-#include "SD.h"
 #include "config.h"
 #include "system.h"
 #include "LEDIndicator.h"
@@ -26,103 +22,9 @@
 #include "GPSModule.h"  // Add GPS Module header
 #include "PayloadModule.h" // Add Payload Module header
 #include "SDCardLogger.h" // Add SD Card Logger header
-#include "NetworkManager.h"
-#include "WebFigModule.h"
-
-// Add these constants at the top of the file after includes
-#define PAYLOAD_LEN 512
-#define MAX_SSID_LEN 32
-#define MAX_PASSWORD_LEN 32
-#define MAX_SERVER_LEN 32
-#define MAX_TOPIC_LEN 32
-#define MAX_ID_LEN 32
-
-// Add these default values
-// const char* DEFAULT_SSID = ".@Vehicle01";
-// const char* DEFAULT_PASSWORD = "intit2021";
-// const char* DEFAULT_MQTT_SERVER = "172.22.1.22";
-// const int DEFAULT_MQTT_PORT = 1883;
-// const char* DEFAULT_MQTT_TOPIC = "INTR.IoT";
-
-WiFiClient intClient;
-PubSubClient client(intClient);
-
-// Global variables
-char payload[PAYLOAD_LEN];
-char payload_fleet[32] = "WillDeleteLater";
-char payload_event[32] = "WillDeleteLater";
-int payload_seq = 0;
-char payload_time[32] = "2021-12-31T13:00:00.000Z";
-char payload_card_reader[16] = "00000000";
-float payload_vin = 0;
-float payload_vbat = 0;
-char payload_engine[8] = "OFF";
-float payload_speed = 0;
-float payload_direction = 0;
-float payload_fuel = 0;
-double payload_latitude = 0;
-double payload_longitude = 0;
-char payload_door[8] = "CLOSE";
-float payload_temp = 0;
-float payload_acc_x = 0, payload_acc_y = 0, payload_acc_z = 0;
-float payload_gyr_x = 0, payload_gyr_y = 0, payload_gyr_z = 0;
-char payload_emer[8] = "FALSE";
-
-// Control flags
-bool emergency_on_flag = false;
-
-// Add these declarations at the top of the file
-unsigned long last_time = 0;
-unsigned long now_time = 0;
-unsigned long last_io_time = 0;
-unsigned long last_red_led_time = 0;
-unsigned long last_orange_led_time = 0;
-unsigned long last_blue_led_time = 0;
-bool initial_state = true;
-bool acc_on_flag = false;
-bool led_blue_on = false;
-bool led_blue_blink = false;
-
-// Keep only one set of LED control flags
-bool led_red_on = false;
-bool led_orange_on = false;
-bool led_red_blink = false;
-bool led_orange_blink = false;
-
-// SIM7600 definitions
-#define SIM_INIT_TIMEOUT 60000
-#define SIM_MSG_TIMEOUT 1000
-#define SIM_MSG_LEN 256
-#define SIM_ACK_LEN 256
-HardwareSerial SIM7600_SERIAL(2); // Define Serial2 for SIM7600
-
-// Add these declarations after SIM7600 definitions
-char sim_msg[SIM_MSG_LEN];
-char sim_ack[SIM_ACK_LEN];
-
-// Add pin definitions for SIM7600
-#define RXD2 16
-#define TXD2 17
-#define S76_PWRKEY 32
 
 // Function prototype
 void updatePayloadData();
-void led_loop();
-void parseLicenseCard();
-void read_ex_io();
-void getGPS();
-void getAnalogSensor();
-void getAccGyro();
-void writeLog();
-void setPayload();
-void Expanded_IO_Init();
-void Gyro_Init();
-void ADC_Init();
-void Card_Init();
-void initSDCard();
-bool SIM7600_init();
-void GPS_Init();
-bool parseOK();
 
 // Callback function for emergency button press
 void emergencyButtonPressed() {
@@ -231,207 +133,254 @@ void motionDetected(float accX, float accY, float accZ, float gyroX, float gyroY
   }
 }
 
-void WiFi_init() {
-    delay(10);
-    
-    loadConfiguration(filename, objConfig);
-    
-    Serial.println("\n=== WiFi Connection Setup ===");
-    Serial.print("Attempting to connect to SSID: ");
-    Serial.println(objConfig.wifiSSID);
-    
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(objConfig.wifiSSID, objConfig.wifiPassword);
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nWiFi Connection Status: SUCCESS");
-        Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP());
-        Serial.println("Web Configuration available at: ");
-        Serial.print("http://");
-        Serial.println(WiFi.localIP());
-    } else {
-        Serial.println("\nWiFi Connection Status: FAILED");
-        Serial.println("Please use web configuration to set up WiFi");
-    }
-    Serial.println("============================");
-}
-
-void WiFi_reconnect() {
-    Serial.println("\nReconnecting to WiFi network...");
-    WiFi.disconnect();
-    WiFi.begin(objConfig.wifiSSID, objConfig.wifiPassword);
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nWiFi Reconnection: SUCCESS");
-        Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP());
-    } else {
-        Serial.println("\nWiFi Reconnection: FAILED");
-    }
-}
-
-void MQTT_init() {
-    client.setServer(objConfig.mqttServer, objConfig.mqttPort);
-    client.setBufferSize(1024);
-}
-
-void MQTT_reconnect() {
-    while (!client.connected()) {
-        if (WiFi.status() != WL_CONNECTED) {
-            WiFi_reconnect();
-        }
-        
-        Serial.print("Attempting MQTT connection...");
-        
-        if (client.connect(objConfig.hardwareID)) {
-            Serial.println("connected");
-            break;
-        } else {
-            Serial.print("failed, rc=");
-            Serial.print(client.state());
-            Serial.println(" retrying in 5 seconds");
-            delay(5000);
-        }
-    }
-}
-
-void sendMQTT() {
-    #ifdef DEBUG
-        Serial.println(payload);
-        Serial.println("data sending");
-    #endif
-    
-    client.publish(objConfig.mqttTopic, payload);
-    
-    // Reset flags after send data
-    emergency_on_flag = false;
-    strcpy(payload_emer, "FALSE");
-}
-
 void setup() {
-    Serial.begin(115200);
-    Wire.begin();
-    
-    Serial.println("\n=== INTrackG System Initializing ===");
-    
-    // Initialize components
-    Expanded_IO_Init();
-    Gyro_Init();
-    ADC_Init();
-    Card_Init();
-    initSDCard();
-    
-    // Initialize SIM7600
-    while(!SIM7600_init()) {
-        Serial.println("Retrying SIM7600 initialization...");
-    }
-    
-    // Initialize GPS
-    GPS_Init();
-    
-    // Initialize WiFi and Web Configuration
-    WiFi_init();
-    initWebFig(); // Initialize web configuration
-    
-    // Initialize MQTT if WiFi connected
-    if (WiFi.status() == WL_CONNECTED) {
-        MQTT_init();
-        Serial.println("MQTT Initialized");
-    }
-    
-    last_time = millis();
-    Serial.println("=== System Initialization Complete ===\n");
+  Serial.begin(115200);
+  Serial.println("\n\n=== INTrackG v1.0 ===");
+  Serial.println("System starting...");
+  
+  // Initialize LED Indicator
+  if (!LedIndicator.begin()) {
+    Serial.println("Failed to initialize LED Indicator!");
+  }
+  
+  // Initialize Buzzer
+  if (!Buzzer.begin()) {
+    Serial.println("Failed to initialize Buzzer!");
+  }
+  
+  // Initialize Emergency Button
+  if (!EmergencyButton.begin()) {
+    Serial.println("Failed to initialize Emergency Button!");
+  }
+  
+  // Initialize Door Sensor
+  if (!DoorSensor.begin()) {
+    Serial.println("Failed to initialize Door Sensor!");
+  }
+  
+  // Initialize Engine Sensor
+  if (!EngineSensor.begin()) {
+    Serial.println("Failed to initialize Engine Sensor!");
+  }
+  
+  // Initialize Temperature Sensor
+  if (!TemperatureSensor.begin()) {
+    Serial.println("Failed to initialize Temperature Sensor!");
+  }
+  
+  // Initialize Voltage Monitor
+  if (!VoltageMonitor.begin()) {
+    Serial.println("Failed to initialize Voltage Monitor!");
+  }
+  
+  // Initialize Fuel Sensor
+  if (!FuelSensor.begin()) {
+    Serial.println("Failed to initialize Fuel Sensor!");
+  }
+  
+  // Initialize Card Reader
+  if (!CardReader.begin()) {
+    Serial.println("Failed to initialize Card Reader!");
+  }
+  
+  // Initialize Accelerometer & Gyro
+  if (!AccelerometerGyro.begin()) {
+    Serial.println("Failed to initialize Accelerometer & Gyro!");
+  }
+  
+  // Initialize GPS Module
+  if (!GPSModule.begin()) {
+    Serial.println("Failed to initialize GPS Module!");
+  }
+  
+  // Initialize Payload Module
+  if (!PayloadModule.begin()) {
+    Serial.println("Failed to initialize Payload Module!");
+  }
+  
+  // Set auto print interval to 1 second
+  PayloadModule.setPrintInterval(1000);
+  
+  // Initialize SD Card Logger
+  if (!SDCardLogger.begin(5)) { // SD card CS pin is 5
+    Serial.println("Failed to initialize SD Card Logger!");
+  }
+  
+  // Set callback for emergency button press
+  EmergencyButton.onPress(emergencyButtonPressed);
+  
+  // Set callbacks for door sensor
+  DoorSensor.onOpen(doorOpened);
+  DoorSensor.onClose(doorClosed);
+  
+  // Set callbacks for engine sensor
+  EngineSensor.onEngineStart(engineStarted);
+  EngineSensor.onEngineStop(engineStopped);
+  
+  // Set callback for temperature sensor
+  TemperatureSensor.onTemperatureChange(temperatureChanged);
+  
+  // Set temperature threshold to 2 degrees (callback will be triggered when temperature changes by 2°C or more)
+  TemperatureSensor.setThreshold(2.0);
+  
+  // Set callback for fuel sensor
+  FuelSensor.onFuelLevelChange(fuelLevelChanged);
+  
+  // Set fuel threshold to 5% (callback will be triggered when fuel level changes by 5% or more)
+  FuelSensor.setThreshold(5.0);
+  
+  // Set callback for card reader
+  CardReader.onCardDetected(cardDetected);
+  
+  // Set callback for accelerometer/gyro
+  AccelerometerGyro.onMotionDetected(motionDetected);
+  
+  // Set motion threshold to 0.5g (callback will be triggered when acceleration changes by 0.5g or more)
+  AccelerometerGyro.setThreshold(0.5);
+  
+  // Set callback for GPS location change
+  GPSModule.onLocationChange(locationChanged);
+  
+  // Set location threshold to 0.0001 degrees (approximately 10 meters)
+  GPSModule.setThreshold(0.0001);
+  
+  // Test double beep at startup
+  Buzzer.doubleBeep();
+  
+  // Initialize system components
+  System.init();
 }
 
 void loop() {
-    led_loop();
-    
-    // Check WiFi and MQTT connections
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi connection lost. Attempting to reconnect...");
-        WiFi_reconnect();
-        return; // Skip data printing if WiFi not connected
+  // Main system loop
+  System.update();
+  
+  // Update LED states
+  LedIndicator.update();
+  
+  // Update Buzzer states
+  Buzzer.update();
+  
+  // Update Emergency Button state
+  EmergencyButton.update();
+  
+  // Update Door Sensor state
+  DoorSensor.update();
+  
+  // Update Engine Sensor state
+  EngineSensor.update();
+  
+  // Update Temperature Sensor state
+  TemperatureSensor.update();
+  
+  // Update Voltage Monitor state
+  VoltageMonitor.update();
+  
+  // Update Fuel Sensor state
+  FuelSensor.update();
+  
+  // Update Card Reader state
+  CardReader.update();
+  
+  // Update Accelerometer & Gyro state
+  AccelerometerGyro.update();
+  
+  // Update GPS Module state
+  GPSModule.update();
+  
+  // Update Payload Module with current sensor values
+  updatePayloadData();
+  
+  // Update Payload Module state
+  PayloadModule.update();
+  
+  // Log payload to SD card if available
+  if (SDCardLogger.isCardMounted()) {
+    // Update file name based on current time from GPS
+    if (GPSModule.hasValidFix()) {
+      SDCardLogger.updateFileName(GPSModule.getTime());
     }
     
-    if (!client.connected()) {
-        MQTT_reconnect();
-        return; // Skip data printing if MQTT not connected
-    }
-    client.loop();
+    // Write payload to SD card
+    SDCardLogger.writeLog(PayloadModule.getPayload());
     
-    // Process card reader
-    parseLicenseCard();
+    // Print SD card statistics
+    Serial.printf("SD Card: %lu MB used of %lu MB total (%lu MB free)\n", 
+                 SDCardLogger.getUsedBytes() / (1024 * 1024),
+                 SDCardLogger.getTotalBytes() / (1024 * 1024),
+                 SDCardLogger.getFreeBytes() / (1024 * 1024));
+  }
+  
+  // Test emergency button state
+  if (EmergencyButton.isPressed()) {
+    Serial.println("Emergency Button is currently pressed!");
+    // Reset the emergency state after handling it
+    EmergencyButton.reset();
+  }
+  
+  // You can also check door state directly if needed
+  if (DoorSensor.isOpen()) {
+    // Door is currently open
+  } else {
+    // Door is currently closed
+  }
+  
+  // You can also check engine state directly if needed
+  if (EngineSensor.isOn()) {
+    // Engine is currently running
+  } else {
+    // Engine is currently off
+  }
+  
+  // You can also check temperature directly if needed
+  float currentTemp = TemperatureSensor.getTemperature();
+  if (currentTemp > 90.0) {
+    // Temperature is critically high
+    // Take emergency action
+  }
+  
+  // You can also check fuel level directly if needed
+  float currentFuel = FuelSensor.getFuelLevel();
+  if (currentFuel < 5.0) {
+    // Fuel level is critically low
+    // Take emergency action
+  }
+  
+  // You can also check card ID directly if needed
+  const char* currentCardID = CardReader.getCardID();
+  if (strcmp(currentCardID, "00000000") != 0) {
+    // A card has been detected
+    // Take appropriate action
+  }
+  
+  // You can also check GPS data directly if needed
+  if (GPSModule.hasValidFix()) {
+    double lat = GPSModule.getLatitude();
+    double lon = GPSModule.getLongitude();
+    float speed = GPSModule.getSpeed();
     
-    // Check IO status every second
-    if(millis() - last_io_time > 1000) {
-        last_io_time = millis();
-        read_ex_io();
+    // Check if vehicle is speeding
+    if (speed > 120.0) {
+      // Vehicle is speeding
+      // Take appropriate action
+      LedIndicator.setRed(true);
+      Buzzer.beep(500); // Warning beep
     }
-    
-    // Handle engine state changes
-    if(initial_state && acc_on_flag) {
-        initial_state = false;
-        led_blue_on = true;
-        led_blue_blink = true;
-        #ifdef BUZZER_MOD
-            buzzer_on();
-            delay(1000);
-            buzzer_off();
-        #endif   
-    }
-    
-    if(!initial_state && !acc_on_flag) {
-        initial_state = true;
-        led_blue_on = false;
-        led_blue_blink = false;
-    }
-    
-    // Update and send data at specified interval
-    now_time = millis();
-    if(now_time - last_time > objConfig.mqttInterval) {
-        last_time = now_time;
-        
-        // Update all sensor data
-        getGPS();
-        getAnalogSensor();
-        getAccGyro();
-        
-        // Print sensor data
-        Serial.println("\n=== Sensor Data Update ===");
-        Serial.printf("Engine State: %s\n", payload_engine);
-        Serial.printf("Door State: %s\n", payload_door);
-        Serial.printf("Emergency State: %s\n", payload_emer);
-        Serial.printf("Card Reader: %s\n", payload_card_reader);
-        Serial.printf("Voltage In: %.2fV, Battery: %.2fV\n", payload_vin, payload_vbat);
-        Serial.printf("Fuel Level: %.1f%%\n", payload_fuel);
-        Serial.printf("Temperature: %.1f°C\n", payload_temp);
-        Serial.printf("GPS: %.7f, %.7f\n", payload_latitude, payload_longitude);
-        Serial.printf("Speed: %.1f km/h, Direction: %.1f°\n", payload_speed, payload_direction);
-        Serial.printf("Acc: X=%.2f Y=%.2f Z=%.2f\n", payload_acc_x, payload_acc_y, payload_acc_z);
-        Serial.printf("Gyro: X=%.2f Y=%.2f Z=%.2f\n", payload_gyr_x, payload_gyr_y, payload_gyr_z);
-        Serial.println("=========================\n");
-        
-        // Update payload and send data
-        setPayload();
-        writeLog();
-        sendMQTT();
-        payload_seq++;
-    }
+  }
+  
+  // You can also check accelerometer values directly if needed
+  float currentAccX = AccelerometerGyro.getAccX();
+  float currentAccY = AccelerometerGyro.getAccY();
+  float currentAccZ = AccelerometerGyro.getAccZ();
+  
+  // Check for vehicle tilt
+  if (abs(currentAccY) > 0.5) {
+    // Vehicle is tilted sideways
+    // Take appropriate action
+  }
+  
+  // Small delay to prevent CPU hogging
+  delay(10);
 }
 
 // Function to update payload data from all sensors
@@ -485,139 +434,4 @@ void updatePayloadData() {
   
   // Set emergency state
   PayloadModule.setEmergency(EmergencyButton.isPressed() ? "TRUE" : "FALSE");
-}
-
-void setPayload() {
-    memset(payload, 0, sizeof(payload));
-    sprintf(payload, "{\"fleet\":\"%s\",\"id\":\"%s\",\"seq\":%d,\"time\":\"%s\",\"event\":\"%s\",\"card-reader\":\"%s\",\"vin\":%.1f,\"vbat\":%.1f,\"engine\":\"%s\",\"speed\":%.1f,\"direction\":%.1f,\"fuel\":%.1f,\"latitude\":%.7f,\"longitude\":%.7f,\"door\":\"%s\",\"temp\":%.1f,\"acc-x\":%.7f,\"acc-y\":%.7f,\"acc-z\":%.7f,\"gyr-x\":%.7f,\"gyr-y\":%.7f,\"gyr-z\":%.7f,\"emergency\":\"%s\"}", 
-        payload_fleet, 
-        objConfig.hardwareID, 
-        payload_seq, 
-        payload_time, 
-        payload_event, 
-        payload_card_reader, 
-        payload_vin, 
-        payload_vbat, 
-        payload_engine, 
-        payload_speed, 
-        payload_direction, 
-        payload_fuel, 
-        payload_latitude, 
-        payload_longitude, 
-        payload_door, 
-        payload_temp, 
-        payload_acc_x, 
-        payload_acc_y, 
-        payload_acc_z, 
-        payload_gyr_x, 
-        payload_gyr_y, 
-        payload_gyr_z, 
-        payload_emer);
-}
-
-void led_loop() {
-    // Implementation of led_loop function
-}
-
-void parseLicenseCard() {
-    // Implementation of parseLicenseCard function
-}
-
-void read_ex_io() {
-    // Implementation of read_ex_io function
-}
-
-void getGPS() {
-    // Implementation of getGPS function
-}
-
-void getAnalogSensor() {
-    // Implementation of getAnalogSensor function
-}
-
-void getAccGyro() {
-    // Implementation of getAccGyro function
-}
-
-void writeLog() {
-    // Implementation of writeLog function
-}
-
-void Expanded_IO_Init() {
-    // Implementation of Expanded_IO_Init function
-}
-
-void Gyro_Init() {
-    // Implementation of Gyro_Init function
-}
-
-void ADC_Init() {
-    // Implementation of ADC_Init function
-}
-
-void Card_Init() {
-    // Implementation of Card_Init function
-}
-
-void initSDCard() {
-    // Implementation of initSDCard function
-}
-
-bool SIM7600_init() {
-    SIM7600_SERIAL.begin(115200, SERIAL_8N1, RXD2, TXD2);
-    delay(100);
-    
-    pinMode(S76_PWRKEY, OUTPUT);
-    digitalWrite(S76_PWRKEY, HIGH);
-    delay(1000);
-    digitalWrite(S76_PWRKEY, LOW);
-    
-    Serial.print("SIM7600 INITING");
-    
-    led_orange_on = true;
-    led_orange_blink = true;
-    
-    unsigned long init_start_time = millis();
-    while((millis() - init_start_time) < SIM_INIT_TIMEOUT) {
-        for(int i=0; i<10; i++) {
-            led_loop();
-            Serial.print(".");
-            delay(500);      
-        }
-        
-        SIM7600_SERIAL.println("AT");
-        for(int i=0; i<5; i++) {
-            led_loop();
-            Serial.print(".");
-            delay(500);      
-        }
-        
-        if(parseOK()) {
-            Serial.println("[DONE]");
-            led_orange_blink = false;
-            led_loop();
-            return true;
-        }
-    }
-    
-    Serial.println("[FAIL]");
-    return false;
-}
-
-void GPS_Init() {
-    // Implementation of GPS_Init function
-}
-
-bool parseOK() {
-    memset(sim_ack, 0, sizeof(sim_ack));
-    unsigned long parse_time = millis();
-    
-    while(SIM7600_SERIAL.available()) {
-        SIM7600_SERIAL.readBytes(sim_ack, SIM_ACK_LEN);
-        if(strstr(sim_ack, "OK") != NULL) {
-            return true;     
-        }
-        return false;     
-    }
-    return false;
 } 
