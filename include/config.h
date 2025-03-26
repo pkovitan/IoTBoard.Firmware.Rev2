@@ -47,8 +47,8 @@
 #define PCF8574_LED_BLINK_INTERVAL 500  // 0.5 seconds for LED blinking
 
 // Default network configuration
-#define DEFAULT_WIFI_SSID ".@Vehicle01"
-#define DEFAULT_WIFI_PASSWORD "intit2021"
+#define DEFAULT_WIFI_SSID "RSEK-CCW8-XCGR"
+#define DEFAULT_WIFI_PASSWORD "SmartTMS23"
 #define DEFAULT_MQTT_SERVER "172.22.1.22"
 #define DEFAULT_MQTT_PORT 1883
 #define DEFAULT_MQTT_TOPIC "INTR.IoT"
