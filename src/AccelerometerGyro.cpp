@@ -374,16 +374,40 @@ void AccelerometerGyroClass::calibrateXYAxes(float speed) {
 
 // Event detection methods
 bool AccelerometerGyroClass::isRollover() {
-    // Since calibration is disabled, use a simpler method based on raw Z acceleration
-    // In normal position, Z should be close to 1g (when device is flat)
+    // Implement a more direct check for rollover based on current Z-axis orientation
+    // A vehicle rollover is a situation where the Z-axis is significantly different from its normal
+    // orientation. In normal conditions, Z is around 1g (pointing up against gravity).
     
-    // Debug output to help diagnose the issue
-    Serial.print("Z acceleration: ");
-    Serial.println(accZ);
+    // Get absolute Z-axis value for orientation calculation
+    float absZ = fabs(accZ);
     
-    // Check if Z axis is significantly different from 1g
-    // Only detect rollover when Z is negative (device is upside down)
-    return (accZ < -rolloverThreshold);
+    // Calculate the angle of the Z-axis from vertical using arccos (in degrees)
+    // When Z is pointing straight up or down (normal or upside down), accZ/absZ = ±1.0
+    // When Z is horizontal, accZ is close to 0
+    float tiltAngle = acos(absZ / 1.0) * 180.0 / PI;  // Convert to degrees
+    
+    // Check if Z-axis is close to horizontal (90° ± threshold)
+    // A rollover means the Z-axis is more horizontal than vertical
+    
+    // Debug output
+    static unsigned long lastDebugPrint = 0;
+    if (millis() - lastDebugPrint > 1000) {  // Once per second
+        lastDebugPrint = millis();
+        
+        if (tiltAngle > 30.0) {  // Only print if there's significant tilt
+            Serial.print("Z-axis tilt angle: ");
+            Serial.print(tiltAngle);
+            Serial.print("°, Raw Z: ");
+            Serial.print(accZ);
+            Serial.print("g, Threshold: ");
+            Serial.print(rolloverThreshold * 90.0);
+            Serial.println("°");
+        }
+    }
+    
+    // Detect rollover when the Z-axis is tilted past 70-80 degrees from vertical
+    // rolloverThreshold of 0.8 means ~72° tilt required (cos(72°) ≈ 0.3)
+    return (tiltAngle > (rolloverThreshold * 90.0));
 }
 
 bool AccelerometerGyroClass::isHardBrake() {
@@ -667,10 +691,19 @@ VehicleEventType AccelerometerGyroClass::detectVehicleEvent() {
         return NO_EVENT;
     }
     
-    // Check for most severe events first
+    // Check for rollover first - this is the most critical and should be detected regardless of other events
+    // The new implementation checks the current orientation directly without needing historical data
     if (isRollover()) {
+        // Reset any other event detection states if needed
         lastEventType = ROLLOVER_EVENT;
         lastEventTime = currentTime;
+        
+        // Print emergency notice about rollover
+        Serial.println("!!!!!!! VEHICLE ROLLOVER DETECTED - EMERGENCY CONDITION !!!!!!!");
+        Serial.print("Z-axis orientation indicates vehicle is severely tilted or rolled over - ");
+        Serial.print("Z acceleration: ");
+        Serial.println(accZ);
+        
         return ROLLOVER_EVENT;
     }
     
@@ -837,42 +870,71 @@ void AccelerometerGyroClass::processVehicleEvent(VehicleEventType eventType, flo
     // Get event name for display
     const char* eventName = "UNKNOWN";
     
-    switch (eventType) {
-        case ROLLOVER_EVENT:
-            eventName = "ROLLOVER";
-            Serial.println("===== ROLLOVER EVENT DETAILS =====");
-            Serial.println("Check if this is a false alarm!");
-            break;
-        case HARD_BRAKE_EVENT:
-            eventName = "HARD_BRAKE";
-            Serial.println("===== HARD BRAKING EVENT DETAILS =====");
-            // Print the deceleration value for better debugging
-            Serial.print("Forward deceleration: ");
-            Serial.print(accX);
-            Serial.println("g (negative value indicates braking)");
-            break;
-        case LANE_CHANGE_EVENT:
-            eventName = "LANE_CHANGE";
-            break;
-        case RAPID_ACCEL_EVENT:
-            eventName = "RAPID_ACCEL";
-            Serial.println("===== RAPID ACCELERATION EVENT DETAILS =====");
-            // Print the acceleration value for better debugging
-            Serial.print("Forward acceleration: ");
-            Serial.print(accX);
-            Serial.println("g");
-            break;
-        case SPIN_EVENT:
-            eventName = "SPIN";
-            break;
-        case HIGH_VIBRATION_EVENT:
-            eventName = "HIGH_VIBRATION";
-            Serial.println("===== HIGH VIBRATION EVENT DETAILS =====");
-            Serial.println("Check if this is a false alarm!");
-            break;
-        default:
-            eventName = "UNKNOWN";
-            break;
+    // Process rollover event
+    if (eventType == ROLLOVER_EVENT) {
+        eventName = "ROLLOVER";
+        Serial.println("===== ROLLOVER EVENT DETAILS =====");
+        
+        // Calculate tilt angle for better diagnostics
+        float absZ = fabs(accZ);
+        float tiltAngle = acos(absZ / 1.0) * 180.0 / PI;
+        
+        Serial.print("Z-axis tilt angle: ");
+        Serial.print(tiltAngle);
+        Serial.println(" degrees from vertical");
+        
+        Serial.print("Z acceleration: ");
+        Serial.print(accZ);
+        Serial.println("g (should be near 0 for horizontal or negative for upside down)");
+        
+        Serial.println("Vehicle appears to be in a critical orientation!");
+    }
+    // Process hard brake event
+    else if (eventType == HARD_BRAKE_EVENT) {
+        eventName = "HARD_BRAKE";
+        Serial.println("===== HARD BRAKING EVENT DETAILS =====");
+        // Print the deceleration value for better debugging
+        Serial.print("Forward deceleration: ");
+        Serial.print(accX);
+        Serial.println("g (negative value indicates braking)");
+    }
+    // Process lane change event
+    else if (eventType == LANE_CHANGE_EVENT) {
+        eventName = "LANE_CHANGE";
+        Serial.println("===== LANE CHANGE EVENT DETAILS =====");
+        Serial.print("Lateral acceleration: ");
+        Serial.print(accY);
+        Serial.println("g");
+        Serial.print("Yaw rate: ");
+        Serial.print(gyroZ);
+        Serial.println(" degrees/s");
+    }
+    // Process rapid acceleration event
+    else if (eventType == RAPID_ACCEL_EVENT) {
+        eventName = "RAPID_ACCEL";
+        Serial.println("===== RAPID ACCELERATION EVENT DETAILS =====");
+        // Print the acceleration value for better debugging
+        Serial.print("Forward acceleration: ");
+        Serial.print(accX);
+        Serial.println("g");
+    }
+    // Process spin event
+    else if (eventType == SPIN_EVENT) {
+        eventName = "SPIN";
+        Serial.println("===== SPIN EVENT DETAILS =====");
+        Serial.print("Yaw rate: ");
+        Serial.print(gyroZ);
+        Serial.println(" degrees/s");
+    }
+    // Process high vibration event
+    else if (eventType == HIGH_VIBRATION_EVENT) {
+        eventName = "HIGH_VIBRATION";
+        Serial.println("===== HIGH VIBRATION EVENT DETAILS =====");
+        Serial.println("Check if this is a false alarm!");
+    }
+    // Default for unknown events
+    else {
+        eventName = "UNKNOWN";
     }
     
     Serial.print("VEHICLE EVENT DETECTED: ");

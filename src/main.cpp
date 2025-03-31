@@ -22,6 +22,7 @@
 #include "GPSModule.h"
 #include "SensorManager.h"
 #include "SDLogger.h"
+#include "BuzzerController.h"
 
 // Forward declarations for callback functions that link to handlers in each module
 void onEmergencyButtonPress();
@@ -54,6 +55,11 @@ void setup() {
   // Initialize Buzzer
   if (!Buzzer.begin()) {
     Serial.println("Failed to initialize Buzzer!");
+  }
+  
+  // Initialize BuzzerController
+  if (!BuzzerController.begin()) {
+    Serial.println("Failed to initialize BuzzerController!");
   }
   
   // Initialize Emergency Button
@@ -143,7 +149,7 @@ void setup() {
   GPSModule.onLocationChange(onLocationChange);
   GPSModule.setThreshold(0.0001);
   
-  // Test double beep at startup
+  // Test double beep at startup to indicate system is ready
   Buzzer.doubleBeep();
   
   // Print system information
@@ -151,6 +157,9 @@ void setup() {
   Serial.println("Data processing rate: ~10Hz (10 times per second)");
   Serial.println("Payload output rate: 1Hz (once per second)");
   Serial.println("System ready!");
+  
+  // Start periodic beeping to indicate system is ready for card
+  BuzzerController.startPeriodicBeep();
 }
 
 // Callback handlers that link to module defaults
@@ -183,7 +192,11 @@ void onFuelLevelChange(float fuelLevel) {
 }
 
 void onCardDetected(const char* cardID) {
+  // Call default handler from CardReader
   CardReader.defaultCardHandler(cardID);
+  
+  // Notify the buzzer controller that a card was detected
+  BuzzerController.onCardDetected();
 }
 
 void onMotionDetected(float accX, float accY, float accZ, float gyroX, float gyroY, float gyroZ) {
@@ -213,6 +226,7 @@ void loop() {
     TemperatureSensor.update();
     AccelerometerGyro.update();
     EmergencyButton.update();
+    BuzzerController.update(); // Add buzzer controller update
     
     // Count each loop iteration for debugging the actual reading rate
     readCounter++;

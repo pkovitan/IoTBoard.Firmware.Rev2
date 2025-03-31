@@ -92,7 +92,8 @@ void CardReaderClass::defaultCardHandler(const char* cardID) {
     // You can add additional actions here when a card is detected
     // For example, validate the card ID against a list of authorized cards
     LedIndicator.setRed(true);
-    Buzzer.beep(200); // Short beep for card detection
+    
+    // Just a short beep for card detection (handled by BuzzerController now)
     
     // Turn off red LED after 2 seconds
     delay(2000);
