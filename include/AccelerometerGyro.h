@@ -26,6 +26,13 @@ enum AxisOrientation {
     CUSTOM_ORIENTATION = 99    // Custom orientation after calibration
 };
 
+// Filter method enum
+enum FilterMethod {
+    SIMPLE_AVERAGE = 0,  // Simple moving average
+    WEIGHTED_AVERAGE = 1, // More weight to recent values
+    EXP_SMOOTHING = 2     // Exponential smoothing
+};
+
 class AccelerometerGyroClass {
 public:
     AccelerometerGyroClass();
@@ -50,6 +57,31 @@ public:
     float getCorrectedGyroX();
     float getCorrectedGyroY();
     float getCorrectedGyroZ();
+    
+    // Get smoothed values (after sliding window filtering)
+    float getSmoothedAccX();
+    float getSmoothedAccY();
+    float getSmoothedAccZ();
+    float getSmoothedGyroX();
+    float getSmoothedGyroY();
+    float getSmoothedGyroZ();
+    
+    // Get standard deviation values (for anomaly detection)
+    float getAccStdDevX() { return accStdDevX; }
+    float getAccStdDevY() { return accStdDevY; }
+    float getAccStdDevZ() { return accStdDevZ; }
+    float getGyroStdDevX() { return gyroStdDevX; }
+    float getGyroStdDevY() { return gyroStdDevY; }
+    float getGyroStdDevZ() { return gyroStdDevZ; }
+    
+    // Anomaly detection helper
+    bool isAnomalyDetected(float stdDevThreshold);
+    
+    // Filter settings
+    void enableFilter(bool enable);
+    bool isFilterEnabled();
+    void setFilterMethod(FilterMethod method);
+    void setFilterAlpha(float alpha);
     
     // Main update loop - should be called in main loop
     void update();
@@ -103,6 +135,10 @@ private:
     float corrAccX, corrAccY, corrAccZ;
     float corrGyroX, corrGyroY, corrGyroZ;
     
+    // Smoothed (filtered) values
+    float smoothAccX, smoothAccY, smoothAccZ;
+    float smoothGyroX, smoothGyroY, smoothGyroZ;
+    
     // Calibration matrices
     float rotationMatrix[3][3];
     bool calibrated;
@@ -130,6 +166,25 @@ private:
     float gyroZWindow[EVENT_WINDOW_SIZE];
     int windowIndex;
     
+    // Sliding Window Filter data
+    static const int FILTER_WINDOW_SIZE = 10;
+    float accXFilterWindow[FILTER_WINDOW_SIZE];
+    float accYFilterWindow[FILTER_WINDOW_SIZE];
+    float accZFilterWindow[FILTER_WINDOW_SIZE];
+    float gyroXFilterWindow[FILTER_WINDOW_SIZE];
+    float gyroYFilterWindow[FILTER_WINDOW_SIZE];
+    float gyroZFilterWindow[FILTER_WINDOW_SIZE];
+    int filterWindowIndex;
+    bool filterEnabled;
+    
+    // Filter method
+    FilterMethod filterMethod;
+    float filterAlpha; // Alpha parameter for exponential smoothing
+    
+    // Standard deviation for anomaly detection
+    float accStdDevX, accStdDevY, accStdDevZ;
+    float gyroStdDevX, gyroStdDevY, gyroStdDevZ;
+    
     // Event detection state
     VehicleEventType lastEventType;
     unsigned long lastEventTime;
@@ -141,8 +196,26 @@ private:
     // Apply calibration to raw values
     void applyCalibration();
     
+    // Apply sliding window filter to values
+    void applyFilter();
+    
     // Update event window with new values
     void updateEventWindow();
+    
+    // Update filter window with new values
+    void updateFilterWindow();
+    
+    // Calculate moving average for filtered values
+    float calculateMovingAverage(float* window, int size);
+    
+    // Calculate weighted moving average
+    float calculateWeightedAverage(float* window, int size);
+    
+    // Calculate standard deviation
+    float calculateStandardDeviation(float* window, int size, float average);
+    
+    // Apply exponential smoothing
+    float applyExponentialSmoothing(float newValue, float prevSmoothed, float alpha);
     
     // Read interval in milliseconds (changed from 50ms to 20ms for much better event detection)
     static const unsigned long READ_INTERVAL = 20; // Read every 20 milliseconds (50Hz)

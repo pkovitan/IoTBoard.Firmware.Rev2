@@ -15,6 +15,14 @@ AccelerometerGyroClass::AccelerometerGyroClass() : imu(I2C_MODE, 0x6B) {
     corrAccX = corrAccY = corrAccZ = 0.0;
     corrGyroX = corrGyroY = corrGyroZ = 0.0;
     
+    // Initialize smoothed values
+    smoothAccX = smoothAccY = smoothAccZ = 0.0;
+    smoothGyroX = smoothGyroY = smoothGyroZ = 0.0;
+    
+    // Initialize standard deviation values
+    accStdDevX = accStdDevY = accStdDevZ = 0.0;
+    gyroStdDevX = gyroStdDevY = gyroStdDevZ = 0.0;
+    
     // Default thresholds - Adjusted to be more realistic
     motionThreshold = 0.2; // Default threshold is 0.2g
     rolloverThreshold = 0.8; // Vehicle tilt more than ~45 degrees
@@ -29,6 +37,12 @@ AccelerometerGyroClass::AccelerometerGyroClass() : imu(I2C_MODE, 0x6B) {
     lastEventTime = 0;
     lastEventType = NO_EVENT;
     windowIndex = 0;
+    filterWindowIndex = 0;
+    
+    // Default filter settings
+    filterEnabled = true;
+    filterMethod = SIMPLE_AVERAGE;
+    filterAlpha = 0.3; // Default alpha for exponential smoothing (0.3 is a good starting point)
     
     // Initialize callbacks
     motionDetectedCallback = nullptr;
@@ -49,6 +63,12 @@ AccelerometerGyroClass::AccelerometerGyroClass() : imu(I2C_MODE, 0x6B) {
     for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
         accXWindow[i] = accYWindow[i] = accZWindow[i] = 0.0;
         gyroXWindow[i] = gyroYWindow[i] = gyroZWindow[i] = 0.0;
+    }
+    
+    // Initialize filter windows
+    for (int i = 0; i < FILTER_WINDOW_SIZE; i++) {
+        accXFilterWindow[i] = accYFilterWindow[i] = accZFilterWindow[i] = 0.0;
+        gyroXFilterWindow[i] = gyroYFilterWindow[i] = gyroZFilterWindow[i] = 0.0;
     }
 }
 
@@ -130,6 +150,169 @@ float AccelerometerGyroClass::getCorrectedGyroY() {
 
 float AccelerometerGyroClass::getCorrectedGyroZ() {
     return corrGyroZ;
+}
+
+// Getter methods for smoothed values
+float AccelerometerGyroClass::getSmoothedAccX() {
+    return smoothAccX;
+}
+
+float AccelerometerGyroClass::getSmoothedAccY() {
+    return smoothAccY;
+}
+
+float AccelerometerGyroClass::getSmoothedAccZ() {
+    return smoothAccZ;
+}
+
+float AccelerometerGyroClass::getSmoothedGyroX() {
+    return smoothGyroX;
+}
+
+float AccelerometerGyroClass::getSmoothedGyroY() {
+    return smoothGyroY;
+}
+
+float AccelerometerGyroClass::getSmoothedGyroZ() {
+    return smoothGyroZ;
+}
+
+// Filter control
+void AccelerometerGyroClass::enableFilter(bool enable) {
+    filterEnabled = enable;
+}
+
+bool AccelerometerGyroClass::isFilterEnabled() {
+    return filterEnabled;
+}
+
+void AccelerometerGyroClass::setFilterMethod(FilterMethod method) {
+    filterMethod = method;
+}
+
+void AccelerometerGyroClass::setFilterAlpha(float alpha) {
+    // Alpha should be between 0 and 1
+    if (alpha < 0.0) alpha = 0.0;
+    if (alpha > 1.0) alpha = 1.0;
+    
+    filterAlpha = alpha;
+}
+
+// Calculate moving average for a given window
+float AccelerometerGyroClass::calculateMovingAverage(float* window, int size) {
+    float sum = 0.0;
+    
+    // Sum all values in the window
+    for (int i = 0; i < size; i++) {
+        sum += window[i];
+    }
+    
+    // Return the average
+    return sum / size;
+}
+
+// Update filter window with new values
+void AccelerometerGyroClass::updateFilterWindow() {
+    // Add the corrected values to the filter window
+    accXFilterWindow[filterWindowIndex] = corrAccX;
+    accYFilterWindow[filterWindowIndex] = corrAccY;
+    accZFilterWindow[filterWindowIndex] = corrAccZ;
+    gyroXFilterWindow[filterWindowIndex] = corrGyroX;
+    gyroYFilterWindow[filterWindowIndex] = corrGyroY;
+    gyroZFilterWindow[filterWindowIndex] = corrGyroZ;
+    
+    // Move to next position in circular buffer
+    filterWindowIndex = (filterWindowIndex + 1) % FILTER_WINDOW_SIZE;
+}
+
+// Calculate standard deviation for a given window
+float AccelerometerGyroClass::calculateStandardDeviation(float* window, int size, float average) {
+    float variance = 0.0;
+    
+    for (int i = 0; i < size; i++) {
+        float diff = window[i] - average;
+        variance += diff * diff;
+    }
+    
+    variance /= size;
+    return sqrt(variance);
+}
+
+// Calculate weighted moving average for a given window
+float AccelerometerGyroClass::calculateWeightedAverage(float* window, int size) {
+    float sum = 0.0;
+    float weightSum = 0.0;
+    
+    // More weight to recent values
+    for (int i = 0; i < size; i++) {
+        int weight = i + 1; // Weights range from 1 to size
+        int idx = (filterWindowIndex - i + size) % size;  // Navigate backwards from current index
+        sum += window[idx] * weight;
+        weightSum += weight;
+    }
+    
+    // Return the weighted average
+    return sum / weightSum;
+}
+
+// Apply exponential smoothing filter
+float AccelerometerGyroClass::applyExponentialSmoothing(float newValue, float prevSmoothed, float alpha) {
+    return alpha * newValue + (1 - alpha) * prevSmoothed;
+}
+
+// Apply the sliding window filter to the corrected sensor values
+void AccelerometerGyroClass::applyFilter() {
+    if (!filterEnabled) {
+        // If filtering is disabled, just use corrected values directly
+        smoothAccX = corrAccX;
+        smoothAccY = corrAccY;
+        smoothAccZ = corrAccZ;
+        smoothGyroX = corrGyroX;
+        smoothGyroY = corrGyroY;
+        smoothGyroZ = corrGyroZ;
+        return;
+    }
+    
+    // Apply filter based on selected method
+    switch (filterMethod) {
+        case SIMPLE_AVERAGE:
+            // Calculate simple moving averages for all axes
+            smoothAccX = calculateMovingAverage(accXFilterWindow, FILTER_WINDOW_SIZE);
+            smoothAccY = calculateMovingAverage(accYFilterWindow, FILTER_WINDOW_SIZE);
+            smoothAccZ = calculateMovingAverage(accZFilterWindow, FILTER_WINDOW_SIZE);
+            smoothGyroX = calculateMovingAverage(gyroXFilterWindow, FILTER_WINDOW_SIZE);
+            smoothGyroY = calculateMovingAverage(gyroYFilterWindow, FILTER_WINDOW_SIZE);
+            smoothGyroZ = calculateMovingAverage(gyroZFilterWindow, FILTER_WINDOW_SIZE);
+            break;
+            
+        case WEIGHTED_AVERAGE:
+            // Calculate weighted moving averages for all axes
+            smoothAccX = calculateWeightedAverage(accXFilterWindow, FILTER_WINDOW_SIZE);
+            smoothAccY = calculateWeightedAverage(accYFilterWindow, FILTER_WINDOW_SIZE);
+            smoothAccZ = calculateWeightedAverage(accZFilterWindow, FILTER_WINDOW_SIZE);
+            smoothGyroX = calculateWeightedAverage(gyroXFilterWindow, FILTER_WINDOW_SIZE);
+            smoothGyroY = calculateWeightedAverage(gyroYFilterWindow, FILTER_WINDOW_SIZE);
+            smoothGyroZ = calculateWeightedAverage(gyroZFilterWindow, FILTER_WINDOW_SIZE);
+            break;
+            
+        case EXP_SMOOTHING:
+            // Apply exponential smoothing to all axes
+            smoothAccX = applyExponentialSmoothing(corrAccX, smoothAccX, filterAlpha);
+            smoothAccY = applyExponentialSmoothing(corrAccY, smoothAccY, filterAlpha);
+            smoothAccZ = applyExponentialSmoothing(corrAccZ, smoothAccZ, filterAlpha);
+            smoothGyroX = applyExponentialSmoothing(corrGyroX, smoothGyroX, filterAlpha);
+            smoothGyroY = applyExponentialSmoothing(corrGyroY, smoothGyroY, filterAlpha);
+            smoothGyroZ = applyExponentialSmoothing(corrGyroZ, smoothGyroZ, filterAlpha);
+            break;
+    }
+    
+    // Calculate standard deviation for all axes (for anomaly detection)
+    accStdDevX = calculateStandardDeviation(accXFilterWindow, FILTER_WINDOW_SIZE, smoothAccX);
+    accStdDevY = calculateStandardDeviation(accYFilterWindow, FILTER_WINDOW_SIZE, smoothAccY);
+    accStdDevZ = calculateStandardDeviation(accZFilterWindow, FILTER_WINDOW_SIZE, smoothAccZ);
+    gyroStdDevX = calculateStandardDeviation(gyroXFilterWindow, FILTER_WINDOW_SIZE, smoothGyroX);
+    gyroStdDevY = calculateStandardDeviation(gyroYFilterWindow, FILTER_WINDOW_SIZE, smoothGyroY);
+    gyroStdDevZ = calculateStandardDeviation(gyroZFilterWindow, FILTER_WINDOW_SIZE, smoothGyroZ);
 }
 
 // Threshold setters
@@ -829,7 +1012,15 @@ void AccelerometerGyroClass::update() {
         // Apply calibration to convert to vehicle-frame coordinates
         applyCalibration();
         
+        // Update sliding window for filtering
+        updateFilterWindow();
+        
+        // Apply moving average filter
+        applyFilter();
+        
         // Update sliding window of values for event detection
+        // NOTE: Here you can decide to use either corrected or smoothed values
+        // for event detection - using corrected values for now for responsiveness
         updateEventWindow();
         
         // Check for vehicle events
@@ -920,4 +1111,25 @@ void AccelerometerGyroClass::defaultMotionHandler(float accX, float accY, float 
     // Serial.print("°/s, Z=");
     // Serial.print(gyroZ);
     // Serial.println("°/s");
+}
+
+// Check if any axis exceeds the standard deviation threshold
+// Useful for detecting unusual movements or sensor anomalies
+bool AccelerometerGyroClass::isAnomalyDetected(float stdDevThreshold) {
+    // Check if any accelerometer axis exceeds the threshold
+    if (accStdDevX > stdDevThreshold || 
+        accStdDevY > stdDevThreshold || 
+        accStdDevZ > stdDevThreshold) {
+        return true;
+    }
+    
+    // Check if any gyroscope axis exceeds the threshold
+    if (gyroStdDevX > stdDevThreshold || 
+        gyroStdDevY > stdDevThreshold || 
+        gyroStdDevZ > stdDevThreshold) {
+        return true;
+    }
+    
+    // No anomalies detected
+    return false;
 } 
