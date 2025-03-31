@@ -209,14 +209,14 @@ void setup() {
   // Initialize SD Card Logger
   if (!SDLogger.begin(5)) { // SD card CS pin is 5
     Serial.println("Failed to initialize SD Card Logger!");
-  } else {
-    // Format SD card at startup
-    Serial.println("Formatting SD card...");
-    if (SDLogger.formatSDCard()) {
-      Serial.println("SD card formatted successfully");
-    } else {
-      Serial.println("Failed to format SD card");
-    }
+  // } else {
+  //   // Format SD card at startup
+  //   Serial.println("Formatting SD card...");
+  //   if (SDLogger.formatSDCard()) {
+  //     Serial.println("SD card formatted successfully");
+  //   } else {
+  //     Serial.println("Failed to format SD card");
+  //   }
   }
   
   // Set callback for emergency button press
