@@ -217,16 +217,16 @@ void loop() {
     static int readCounter = 0;
     
     // Update all sensors
-    CardReader.update();
-    VoltageMonitor.update();
-    EngineSensor.update();
-    GPSModule.update();
-    FuelSensor.update();
-    DoorSensor.update();
-    TemperatureSensor.update();
+    // CardReader.update();
+    // VoltageMonitor.update();
+    // EngineSensor.update();
+    // GPSModule.update();
+    // FuelSensor.update();
+    // DoorSensor.update();
+    // TemperatureSensor.update();
     AccelerometerGyro.update();
-    EmergencyButton.update();
-    BuzzerController.update(); // Add buzzer controller update
+    // EmergencyButton.update();
+    // BuzzerController.update(); // Add buzzer controller update
     
     // Count each loop iteration for debugging the actual reading rate
     readCounter++;
@@ -244,7 +244,7 @@ void loop() {
     }
     
     // Update SensorManager
-    SensorManager.update();
+    // SensorManager.update();
     
     // Toggle between JSON and NMEA formats every 5 seconds
     static unsigned long lastFormatToggle = 0;
@@ -257,6 +257,8 @@ void loop() {
     // Get current payload based on selected format
     const char* payload = SensorManager.getPayload(useJsonFormat ? JSON_FORMAT : NMEA_FORMAT);
     
+    // Comment out payload prints to focus on event debugging
+    /*
     // Print payload to serial
     Serial.println(payload);
     
@@ -264,6 +266,22 @@ void loop() {
     if (SDLogger.isCardMounted()) {
         SDLogger.writeLog(payload);
     }
+    */
+    
+    // Print real-time accelerometer and gyroscope data
+    // Serial.print("ACC: X=");
+    // Serial.print(AccelerometerGyro.getCorrectedAccX());
+    // Serial.print("g Y=");
+    // Serial.print(AccelerometerGyro.getCorrectedAccY());
+    // Serial.print("g Z=");
+    // Serial.print(AccelerometerGyro.getCorrectedAccZ());
+    // Serial.print("g | GYRO: X=");
+    // Serial.print(AccelerometerGyro.getCorrectedGyroX());
+    // Serial.print("°/s Y=");
+    // Serial.print(AccelerometerGyro.getCorrectedGyroY());
+    // Serial.print("°/s Z=");
+    // Serial.print(AccelerometerGyro.getCorrectedGyroZ());
+    // Serial.println("°/s");
     
     // Smaller delay to allow for more frequent sensor readings
     // Was 100ms, reduced to 10ms to enable ~10x faster readings

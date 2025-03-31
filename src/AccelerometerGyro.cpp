@@ -374,370 +374,393 @@ void AccelerometerGyroClass::calibrateXYAxes(float speed) {
 
 // Event detection methods
 bool AccelerometerGyroClass::isRollover() {
-    // Implement a more direct check for rollover based on current Z-axis orientation
-    // A vehicle rollover is a situation where the Z-axis is significantly different from its normal
-    // orientation. In normal conditions, Z is around 1g (pointing up against gravity).
+    // Calculate pitch and roll angles using the provided formulas
+    float pitch = atan2(corrAccX, sqrt(corrAccY*corrAccY + corrAccZ*corrAccZ)) * 180.0/PI;
+    float roll = atan2(corrAccY, sqrt(corrAccX*corrAccX + corrAccZ*corrAccZ)) * 180.0/PI;
     
-    // Get absolute Z-axis value for orientation calculation
-    float absZ = fabs(accZ);
+    // Get absolute Z-axis value for orientation check
+    float absZ = fabs(corrAccZ);
     
-    // Calculate the angle of the Z-axis from vertical using arccos (in degrees)
-    // When Z is pointing straight up or down (normal or upside down), accZ/absZ = ±1.0
-    // When Z is horizontal, accZ is close to 0
-    float tiltAngle = acos(absZ / 1.0) * 180.0 / PI;  // Convert to degrees
+    // Count consecutive samples where angles exceed threshold
+    static int highAngleCount = 0;
     
-    // Check if Z-axis is close to horizontal (90° ± threshold)
-    // A rollover means the Z-axis is more horizontal than vertical
+    // Check if pitch or roll exceeds 45 degrees (reduced from 50) and Z is not aligned with gravity
+    // Also increased Z threshold from 0.7 to 0.75 to make rollover detection even more sensitive
+    if ((abs(pitch) > 45.0 || abs(roll) > 45.0) && absZ < 0.75) {
+        highAngleCount++;
+        
+        // Print debug when we're starting to detect high angles
+        if (highAngleCount == 1) {
+            Serial.print("Potential rollover - Pitch: ");
+            Serial.print(pitch);
+            Serial.print("°, Roll: ");
+            Serial.print(roll);
+            Serial.print("°, Z: ");
+            Serial.println(corrAccZ);
+        }
+    } else {
+        highAngleCount = 0;
+    }
     
-    // Debug output
+    // Need at least 2 consecutive samples (reduced from 3 to make it even more responsive)
+    bool isRollingOver = (highAngleCount >= 2);
+    
+    // Debug info regularly to help understand values
     static unsigned long lastDebugPrint = 0;
-    if (millis() - lastDebugPrint > 1000) {  // Once per second
+    if (millis() - lastDebugPrint > 500) {  // Twice per second (more frequent)
         lastDebugPrint = millis();
         
-        if (tiltAngle > 30.0) {  // Only print if there's significant tilt
-            Serial.print("Z-axis tilt angle: ");
-            Serial.print(tiltAngle);
-            Serial.print("°, Raw Z: ");
-            Serial.print(accZ);
-            Serial.print("g, Threshold: ");
-            Serial.print(rolloverThreshold * 90.0);
-            Serial.println("°");
+        if (abs(pitch) > 25.0 || abs(roll) > 25.0 || absZ < 0.8) {  // Print more often
+            Serial.print("Tilt - Pitch: ");
+            Serial.print(pitch);
+            Serial.print("°, Roll: ");
+            Serial.print(roll);
+            Serial.print("°, Z: ");
+            Serial.print(corrAccZ);
+            Serial.print("g, Count: ");
+            Serial.println(highAngleCount);
         }
     }
     
-    // Detect rollover when the Z-axis is tilted past 70-80 degrees from vertical
-    // rolloverThreshold of 0.8 means ~72° tilt required (cos(72°) ≈ 0.3)
-    return (tiltAngle > (rolloverThreshold * 90.0));
+    return isRollingOver;
 }
 
 bool AccelerometerGyroClass::isHardBrake() {
-    // Hard braking is detected by a sudden deceleration in the forward direction
+    // Hard braking is detected by sustained strong deceleration in forward direction
+    // Using threshold of -0.25g for at least 0.5 seconds (5 samples at 10ms sampling)
     
     // Get forward acceleration component 
     float forwardAcc = corrAccX;
     
-    // For hard braking, we'll see a strong negative acceleration in forward direction
-    // Check for peak braking value to make it more responsive
-    float peakBraking = forwardAcc;
+    // Count consecutive samples with significant deceleration
+    static int consecutiveCount = 0;
     
-    // Also look for peak braking in the window
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (accXWindow[i] < peakBraking) {
-            peakBraking = accXWindow[i];
-        }
+    // Check if forward acceleration is strongly negative (hard braking)
+    if (forwardAcc < -0.25) {
+        consecutiveCount++;
+    } else {
+        consecutiveCount = 0;
     }
     
-    // Count high deceleration samples and look for consecutive samples
-    int countHighDecel = 0;
-    int consecutiveHighDecel = 0;
-    int maxConsecutive = 0;
-    
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (accXWindow[i] < -hardBrakeThreshold) {
-            countHighDecel++;
-            consecutiveHighDecel++;
-            if (consecutiveHighDecel > maxConsecutive) {
-                maxConsecutive = consecutiveHighDecel;
-            }
-        } else {
-            consecutiveHighDecel = 0;
-        }
-    }
+    // Need at least 5 consecutive samples (approximately 0.5s with 10ms sampling)
+    bool isHardBraking = (consecutiveCount >= 5);
     
     // Print debug info occasionally
     static unsigned long lastDebugPrint = 0;
     if (millis() - lastDebugPrint > 1000) {  // Once per second
         lastDebugPrint = millis();
         
-        if (peakBraking < -0.1) {  // Only print if there's some braking happening
-            Serial.print("Peak braking: ");
-            Serial.print(peakBraking);
-            Serial.print("g, Threshold: -");
-            Serial.print(hardBrakeThreshold);
-            Serial.print("g, Count: ");
-            Serial.print(countHighDecel);
-            Serial.print(", Max Consecutive: ");
-            Serial.println(maxConsecutive);
+        if (forwardAcc < -0.1) {  // Only print if there's some braking
+            Serial.print("Hard brake detection - Forward acc: ");
+            Serial.print(forwardAcc);
+            Serial.print("g, Threshold: -0.25g, Consecutive count: ");
+            Serial.println(consecutiveCount);
         }
     }
     
-    // Make hard brake detection more difficult - require:
-    // 1. Current reading is significantly below threshold (increased factor from 1.2 to 1.7) OR
-    // 2. We have at least 4 samples that meet the threshold AND at least 3 consecutive samples
-    return (peakBraking < -(hardBrakeThreshold * 1.7) || 
-            (forwardAcc < -hardBrakeThreshold && countHighDecel >= 4 && maxConsecutive >= 3));
+    return isHardBraking;
 }
 
 bool AccelerometerGyroClass::isLaneChange() {
     // Lane change is detected by lateral (side-to-side) acceleration
-    // as well as rotation around the vertical axis (yaw rate from gyro)
+    // or significant rotation around the vertical axis (yaw rate)
     
-    // Get lateral acceleration component
+    // Get lateral acceleration component and yaw rate
     float lateralAcc = corrAccY;
-    
-    // Get yaw rotation rate (rotation around Z axis, which indicates turning)
     float yawRate = corrGyroZ;
     
-    // Track peak lateral acceleration
-    float peakLateralAcc = lateralAcc;
+    // Check if either condition is met - increased thresholds to reduce sensitivity
+    bool highLateralForce = (fabs(lateralAcc) > 0.4);   // Increased from 0.25 to 0.4
+    bool highYawRate = (fabs(yawRate) > 70.0);         // Increased from 50.0 to 70.0
     
-    // Also look for peak lateral acceleration in the window
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (abs(accYWindow[i]) > abs(peakLateralAcc)) {
-            peakLateralAcc = accYWindow[i];
+    // Start lane change detection
+    static unsigned long laneChangeStartTime = 0;
+    static unsigned long lastLaneChangeTime = 0;
+    static bool inLaneChange = false;
+    static int signChangeCount = 0;
+    static float lastSignLateral = 0; // Track last direction
+    
+    // Current time for event tracking
+    unsigned long currentTime = millis();
+    
+    // If we detect high lateral force or yaw rate and not in lane change, start tracking
+    if ((highLateralForce || highYawRate) && !inLaneChange) {
+        inLaneChange = true;
+        laneChangeStartTime = currentTime;
+        signChangeCount = 0;
+        lastSignLateral = (lateralAcc >= 0) ? 1 : -1;
+    }
+    
+    // Track sign changes in lateral acceleration (typical in lane change)
+    if (inLaneChange) {
+        float currentSign = (lateralAcc >= 0) ? 1 : -1;
+        if (currentSign != lastSignLateral && fabs(lateralAcc) > 0.2) {  // Increased from 0.1 to 0.2
+            signChangeCount++;
+            lastSignLateral = currentSign;
         }
     }
     
-    // Count high acceleration samples and look for consecutive samples
-    int countLateralAcc = 0;
-    int consecutiveLateralAcc = 0;
-    int maxConsecutive = 0;
+    // If we're in a lane change event, track timing and check for completion
+    bool laneChangeDetected = false;
     
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (abs(accYWindow[i]) > laneChangeThreshold) {
-            countLateralAcc++;
-            consecutiveLateralAcc++;
-            if (consecutiveLateralAcc > maxConsecutive) {
-                maxConsecutive = consecutiveLateralAcc;
-            }
-        } else {
-            consecutiveLateralAcc = 0;
+    if (inLaneChange) {
+        // Lane change typically has a sign change (one direction, then other)
+        // and completes within about 1-2 seconds
+        unsigned long eventDuration = currentTime - laneChangeStartTime;
+        
+        // Make detection more strict - require more definitive sign change
+        if (eventDuration > 300 && eventDuration < 1500 && 
+            (signChangeCount >= 1 && fabs(lateralAcc) < 0.1)) {
+            // Lane change is complete, reset state
+            inLaneChange = false;
+            lastLaneChangeTime = currentTime;
+            laneChangeDetected = true;
+        } else if (eventDuration > 2000) {
+            // Lane change timeout - likely not a lane change but a turn
+            inLaneChange = false;
         }
     }
     
-    // Count samples with sufficient yaw rate (indicating turning)
-    int countYawRate = 0;
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (abs(gyroZWindow[i]) > 15.0) { // 15 degrees per second threshold for turning
-            countYawRate++;
-        }
-    }
-    
-    // Print debug info occasionally
+    // Print debug info
     static unsigned long lastDebugPrint = 0;
     if (millis() - lastDebugPrint > 1000) {  // Once per second
         lastDebugPrint = millis();
         
-        if (abs(peakLateralAcc) > 0.1 || abs(yawRate) > 10.0) {  // Only print if there's some movement
-            Serial.print("Lane change detection - Lateral Acc: ");
-            Serial.print(peakLateralAcc);
-            Serial.print("g, Yaw Rate: ");
+        if (fabs(lateralAcc) > 0.2 || fabs(yawRate) > 30.0) {  // Print for significant movement only
+            Serial.print("Lane change detection - Lateral acc: ");
+            Serial.print(lateralAcc);
+            Serial.print("g, Yaw rate: ");
             Serial.print(yawRate);
-            Serial.print("°/s, Acc Count: ");
-            Serial.print(countLateralAcc);
-            Serial.print(", Yaw Count: ");
-            Serial.print(countYawRate);
-            Serial.print(", Max Consecutive: ");
-            Serial.println(maxConsecutive);
+            Serial.print("°/s, In event: ");
+            Serial.print(inLaneChange ? "Yes" : "No");
+            Serial.print(", Sign changes: ");
+            Serial.println(signChangeCount);
         }
     }
     
-    // Require both significant lateral acceleration AND yaw rate for more reliable detection
-    // This makes detection harder by requiring both acceleration and rotation
-    // 1. We have a peak lateral acceleration above threshold * 1.5 OR
-    // 2. We have at least 3 consecutive samples over threshold AND
-    // 3. We also need some yaw rate indicating turning (at least 2 samples)
-    return ((abs(peakLateralAcc) > (laneChangeThreshold * 1.5)) || 
-            (abs(lateralAcc) > laneChangeThreshold && countLateralAcc >= 3 && maxConsecutive >= 3)) && 
-           (countYawRate >= 2);
+    return laneChangeDetected;
 }
 
 bool AccelerometerGyroClass::isRapidAcceleration() {
-    // Rapid acceleration is detected by a sudden increase in forward acceleration
+    // Rapid acceleration is detected by sustained acceleration in forward direction
+    // Increased threshold to make it less sensitive
     
     // Get forward acceleration component
     float forwardAcc = corrAccX;
     
-    // Find peak acceleration in window
-    float peakAccel = forwardAcc;
+    // Track consecutive high acceleration samples
+    static int consecutiveCount = 0;
     
-    // Also look for peak acceleration in the window
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (accXWindow[i] > peakAccel) {
-            peakAccel = accXWindow[i];
-        }
+    // Check if forward acceleration exceeds threshold - increased from 0.25 to 0.4
+    if (forwardAcc > 0.4) {
+        consecutiveCount++;
+    } else {
+        consecutiveCount = 0;
     }
     
-    // Count high acceleration samples and look for consecutive samples
-    int countHighAccel = 0;
-    int consecutiveHighAccel = 0;
-    int maxConsecutive = 0;
-    
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (accXWindow[i] > rapidAccelThreshold) {
-            countHighAccel++;
-            consecutiveHighAccel++;
-            if (consecutiveHighAccel > maxConsecutive) {
-                maxConsecutive = consecutiveHighAccel;
-            }
-        } else {
-            consecutiveHighAccel = 0;
-        }
-    }
+    // Need at least 4 consecutive samples (increased from 3 to make less sensitive)
+    bool isRapidAccelerating = (consecutiveCount >= 4);
     
     // Print debug info occasionally
     static unsigned long lastDebugPrint = 0;
     if (millis() - lastDebugPrint > 1000) {  // Once per second
         lastDebugPrint = millis();
         
-        if (peakAccel > 0.1) {  // Only print if there's some acceleration happening
-            Serial.print("Peak acceleration: ");
-            Serial.print(peakAccel);
-            Serial.print("g, Threshold: ");
-            Serial.print(rapidAccelThreshold);
-            Serial.print("g, Count: ");
-            Serial.print(countHighAccel);
-            Serial.print(", Max Consecutive: ");
-            Serial.println(maxConsecutive);
+        if (forwardAcc > 0.2) {  // Only print if there's more significant acceleration
+            Serial.print("Rapid acceleration - Forward acc: ");
+            Serial.print(forwardAcc);
+            Serial.print("g, Threshold: 0.4g, Consecutive count: ");
+            Serial.println(consecutiveCount);
         }
     }
     
-    // Less sensitive detection - require:
-    // 1. Current reading is significantly above threshold (increased factor from 1.2 to 1.5) OR
-    // 2. We have at least 3 samples that meet the threshold AND at least 2 consecutive samples
-    return (peakAccel > (rapidAccelThreshold * 1.5) || 
-            (forwardAcc > rapidAccelThreshold && countHighAccel >= 3 && maxConsecutive >= 2));
+    return isRapidAccelerating;
 }
 
 bool AccelerometerGyroClass::isSpinning() {
     // Spinning is detected by high angular velocity around the Z axis
+    // Increased threshold to make detection less sensitive
     
     // Get Z-axis rotation rate
     float zRotationRate = corrGyroZ;
     
-    // Check for significant rotation rate (either direction)
-    // Add duration check - spinning should be maintained for a short period
-    int countHighRotation = 0;
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (abs(gyroZWindow[i]) > spinThreshold) {
-            countHighRotation++;
+    // Track consecutive high rotation samples
+    static int consecutiveCount = 0;
+    
+    // Check if rotation rate exceeds threshold (now 120 deg/s - increased from 100 deg/s)
+    if (fabs(zRotationRate) > 120.0) {
+        consecutiveCount++;
+        
+        // Print debug when we start detecting high rotation
+        if (consecutiveCount == 1) {
+            Serial.print("Potential spin detected - Yaw rate: ");
+            Serial.print(zRotationRate);
+            Serial.println("°/s");
+        }
+    } else {
+        consecutiveCount = 0;
+    }
+    
+    // Increased required consecutive samples from 3 to 4 to make it less sensitive
+    bool isSpinning = (consecutiveCount >= 4);
+    
+    // Print debug info more frequently
+    static unsigned long lastDebugPrint = 0;
+    if (millis() - lastDebugPrint > 500) {  // Twice per second
+        lastDebugPrint = millis();
+        
+        if (fabs(zRotationRate) > 60.0) {  // Increased threshold for debug printing from 30 to 60
+            Serial.print("Rotation - Yaw rate: ");
+            Serial.print(zRotationRate);
+            Serial.print("°/s, Threshold: 120°/s, Count: ");
+            Serial.println(consecutiveCount);
         }
     }
     
-    // Require at least 3 samples showing high rotation
-    return (abs(zRotationRate) > spinThreshold && countHighRotation >= 3);
+    return isSpinning;
 }
 
 bool AccelerometerGyroClass::isHighVibration() {
-    // High vibration is detected by rapid changes in acceleration values
+    // High vibration is detected by calculating RMS value of acceleration
+    // Threshold: RMS > 1.2g for sustained period
     
-    // Calculate acceleration variance over the window
-    float sumX = 0, sumY = 0, sumZ = 0;
-    float meanX = 0, meanY = 0, meanZ = 0;
-    float varX = 0, varY = 0, varZ = 0;
+    // Calculate RMS of acceleration
+    float rms = sqrt((corrAccX*corrAccX + corrAccY*corrAccY + corrAccZ*corrAccZ)/3.0);
     
-    // Calculate means
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        sumX += accXWindow[i];
-        sumY += accYWindow[i];
-        sumZ += accZWindow[i];
+    // Subtract gravity component properly
+    // For a stationary device, RMS should be close to 1g due to gravity 
+    float normalizedRms = 0;
+    if (rms > 1.0) {
+        normalizedRms = rms - 1.0; // Subtract gravity (increased from 0.9 to 1.0)
     }
     
-    meanX = sumX / EVENT_WINDOW_SIZE;
-    meanY = sumY / EVENT_WINDOW_SIZE;
-    meanZ = sumZ / EVENT_WINDOW_SIZE;
+    // Track consecutive high vibration samples
+    static int consecutiveCount = 0;
     
-    // Calculate variances
-    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        varX += (accXWindow[i] - meanX) * (accXWindow[i] - meanX);
-        varY += (accYWindow[i] - meanY) * (accYWindow[i] - meanY);
-        varZ += (accZWindow[i] - meanZ) * (accZWindow[i] - meanZ);
-    }
-    
-    varX /= EVENT_WINDOW_SIZE;
-    varY /= EVENT_WINDOW_SIZE;
-    varZ /= EVENT_WINDOW_SIZE;
-    
-    // Calculate total variance (sum of variances in all dimensions)
-    float totalVar = varX + varY + varZ;
-    
-    // Debug output
-    Serial.print("Vibration variance: ");
-    Serial.println(totalVar);
-    
-    // Check if variance exceeds threshold and require consecutive high readings
-    static int highVibrationCounter = 0;
-    
-    if (totalVar > vibrationThreshold) {
-        highVibrationCounter++;
+    // Use much higher threshold for vibration (increased from 0.3 to 0.8)
+    if (normalizedRms > 0.8) {  // Significantly increased threshold to avoid false positives
+        consecutiveCount++;
     } else {
-        highVibrationCounter = 0;
+        // Reset count quickly to avoid false positives
+        consecutiveCount = 0;
     }
     
-    // Only report vibration if we have several consecutive high readings
-    return (highVibrationCounter >= 5 && totalVar > vibrationThreshold);
+    // Need at least 20 samples showing high vibration (doubled from 10)
+    bool isHighVibration = (consecutiveCount >= 20);
+    
+    // Only print debug info when vibration is high enough to be notable
+    static unsigned long lastDebugPrint = 0;
+    if (millis() - lastDebugPrint > 2000) {  // Less frequent (every 2 seconds)
+        lastDebugPrint = millis();
+        
+        if (normalizedRms > 0.4) {  // Only print for significant vibrations
+            Serial.print("Vib Debug - RMS: ");
+            Serial.print(rms);
+            Serial.print("g, Norm: ");
+            Serial.print(normalizedRms);
+            Serial.print("g, Count: ");
+            Serial.println(consecutiveCount);
+        }
+    }
+    
+    return isHighVibration;
 }
 
 VehicleEventType AccelerometerGyroClass::detectVehicleEvent() {
-    // Check for each event type in order of priority
+    // Check for each event type
+    // Multiple events can happen simultaneously, but we return only one based on priority
     
     // Check if enough time has passed since last event
     unsigned long currentTime = millis();
     
-    // Special longer interval for hard braking to prevent frequent triggers
-    if (lastEventType == HARD_BRAKE_EVENT && 
-        (currentTime - lastEventTime) < (MIN_EVENT_INTERVAL * 3)) {
-        return NO_EVENT;
-    }
-    
-    // Special longer interval for rapid acceleration to prevent false positives
-    if (lastEventType == RAPID_ACCEL_EVENT && 
-        (currentTime - lastEventTime) < (MIN_EVENT_INTERVAL * 2)) {
-        return NO_EVENT;
-    }
-    
-    // Check regular interval for other events
+    // Check regular interval for events
     if ((currentTime - lastEventTime) < MIN_EVENT_INTERVAL) {
         return NO_EVENT;
     }
     
-    // Check for rollover first - this is the most critical and should be detected regardless of other events
-    // The new implementation checks the current orientation directly without needing historical data
+    // Check all possible events and update SensorManager for each detected event
+    
+    // Rollover is the highest priority - check it first
     if (isRollover()) {
-        // Reset any other event detection states if needed
+        // Process rollover event
         lastEventType = ROLLOVER_EVENT;
         lastEventTime = currentTime;
         
-        // Print emergency notice about rollover
-        Serial.println("!!!!!!! VEHICLE ROLLOVER DETECTED - EMERGENCY CONDITION !!!!!!!");
-        Serial.print("Z-axis orientation indicates vehicle is severely tilted or rolled over - ");
-        Serial.print("Z acceleration: ");
-        Serial.println(accZ);
+        // Call vehicle event callback if registered
+        if (vehicleEventCallback != nullptr) {
+            vehicleEventCallback(ROLLOVER_EVENT, corrAccX, corrAccY, corrAccZ, corrGyroX, corrGyroY, corrGyroZ);
+        }
         
-        return ROLLOVER_EVENT;
+        return ROLLOVER_EVENT;  // Return immediately for critical events
     }
     
-    if (isHardBrake()) {
-        lastEventType = HARD_BRAKE_EVENT;
+    // For other events, we'll check all of them and send callbacks for each detected event
+    // But return only the highest priority one
+    
+    bool hardBrakeDetected = isHardBrake();
+    bool spinDetected = isSpinning();
+    bool rapidAccelDetected = isRapidAcceleration();
+    bool laneChangeDetected = isLaneChange();
+    bool highVibrationDetected = isHighVibration();
+    
+    // Process each detected event
+    VehicleEventType highestPriorityEvent = NO_EVENT;
+    
+    if (hardBrakeDetected) {
+        // Call vehicle event callback if registered
+        if (vehicleEventCallback != nullptr) {
+            vehicleEventCallback(HARD_BRAKE_EVENT, corrAccX, corrAccY, corrAccZ, corrGyroX, corrGyroY, corrGyroZ);
+        }
+        highestPriorityEvent = HARD_BRAKE_EVENT;
+    }
+    
+    if (spinDetected) {
+        // Call vehicle event callback if registered
+        if (vehicleEventCallback != nullptr) {
+            vehicleEventCallback(SPIN_EVENT, corrAccX, corrAccY, corrAccZ, corrGyroX, corrGyroY, corrGyroZ);
+        }
+        if (highestPriorityEvent == NO_EVENT) {
+            highestPriorityEvent = SPIN_EVENT;
+        }
+    }
+    
+    if (rapidAccelDetected) {
+        // Call vehicle event callback if registered
+        if (vehicleEventCallback != nullptr) {
+            vehicleEventCallback(RAPID_ACCEL_EVENT, corrAccX, corrAccY, corrAccZ, corrGyroX, corrGyroY, corrGyroZ);
+        }
+        if (highestPriorityEvent == NO_EVENT) {
+            highestPriorityEvent = RAPID_ACCEL_EVENT;
+        }
+    }
+    
+    if (laneChangeDetected) {
+        // Call vehicle event callback if registered
+        if (vehicleEventCallback != nullptr) {
+            vehicleEventCallback(LANE_CHANGE_EVENT, corrAccX, corrAccY, corrAccZ, corrGyroX, corrGyroY, corrGyroZ);
+        }
+        if (highestPriorityEvent == NO_EVENT) {
+            highestPriorityEvent = LANE_CHANGE_EVENT;
+        }
+    }
+    
+    if (highVibrationDetected) {
+        // Call vehicle event callback if registered
+        if (vehicleEventCallback != nullptr) {
+            vehicleEventCallback(HIGH_VIBRATION_EVENT, corrAccX, corrAccY, corrAccZ, corrGyroX, corrGyroY, corrGyroZ);
+        }
+        if (highestPriorityEvent == NO_EVENT) {
+            highestPriorityEvent = HIGH_VIBRATION_EVENT;
+        }
+    }
+    
+    // Update state if any event was detected
+    if (highestPriorityEvent != NO_EVENT) {
+        lastEventType = highestPriorityEvent;
         lastEventTime = currentTime;
-        return HARD_BRAKE_EVENT;
     }
     
-    if (isSpinning()) {
-        lastEventType = SPIN_EVENT;
-        lastEventTime = currentTime;
-        return SPIN_EVENT;
-    }
-    
-    if (isRapidAcceleration()) {
-        lastEventType = RAPID_ACCEL_EVENT;
-        lastEventTime = currentTime;
-        return RAPID_ACCEL_EVENT;
-    }
-    
-    if (isLaneChange()) {
-        lastEventType = LANE_CHANGE_EVENT;
-        lastEventTime = currentTime;
-        return LANE_CHANGE_EVENT;
-    }
-    
-    if (isHighVibration()) {
-        lastEventType = HIGH_VIBRATION_EVENT;
-        lastEventTime = currentTime;
-        return HIGH_VIBRATION_EVENT;
-    }
-    
-    return NO_EVENT;
+    return highestPriorityEvent;
 }
 
 // Apply calibration to raw values
@@ -812,56 +835,20 @@ void AccelerometerGyroClass::update() {
         // Check for vehicle events
         VehicleEventType eventType = detectVehicleEvent();
         
-        // Call vehicle event callback if an event was detected
-        if (eventType != NO_EVENT && vehicleEventCallback != nullptr) {
-            vehicleEventCallback(eventType, corrAccX, corrAccY, corrAccZ, corrGyroX, corrGyroY, corrGyroZ);
-        }
+        // Note: detectVehicleEvent now directly calls the callbacks for all detected events
+        // No additional callback is needed here
         
-        // Check if motion exceeds threshold (original simple detection)
+        // Check if motion exceeds threshold (for basic motion detection)
         float deltaX = abs(accX - lastAccX);
         float deltaY = abs(accY - lastAccY);
         float deltaZ = abs(accZ - lastAccZ);
         
         if (deltaX > motionThreshold || deltaY > motionThreshold || deltaZ > motionThreshold) {
-            // Motion detected
-            Serial.println("Motion detected!");
-            
-            // Call callback if registered
+            // Call motion callback if registered
             if (motionDetectedCallback != nullptr) {
                 motionDetectedCallback(accX, accY, accZ, gyroX, gyroY, gyroZ);
             }
         }
-        
-        // Uncomment for debugging
-        /*
-        Serial.print("Acc Raw X: ");
-        Serial.print(accX);
-        Serial.print("g, Y: ");
-        Serial.print(accY);
-        Serial.print("g, Z: ");
-        Serial.print(accZ);
-        Serial.print("g | Gyro X: ");
-        Serial.print(gyroX);
-        Serial.print("°/s, Y: ");
-        Serial.print(gyroY);
-        Serial.print("°/s, Z: ");
-        Serial.print(gyroZ);
-        Serial.println("°/s");
-        
-        Serial.print("Acc Corr X: ");
-        Serial.print(corrAccX);
-        Serial.print("g, Y: ");
-        Serial.print(corrAccY);
-        Serial.print("g, Z: ");
-        Serial.print(corrAccZ);
-        Serial.print("g | Gyro X: ");
-        Serial.print(corrGyroX);
-        Serial.print("°/s, Y: ");
-        Serial.print(corrGyroY);
-        Serial.print("°/s, Z: ");
-        Serial.print(corrGyroZ);
-        Serial.println("°/s");
-        */
     }
 }
 
@@ -870,88 +857,45 @@ void AccelerometerGyroClass::processVehicleEvent(VehicleEventType eventType, flo
     // Get event name for display
     const char* eventName = "UNKNOWN";
     
-    // Process rollover event
-    if (eventType == ROLLOVER_EVENT) {
-        eventName = "ROLLOVER";
-        Serial.println("===== ROLLOVER EVENT DETAILS =====");
-        
-        // Calculate tilt angle for better diagnostics
-        float absZ = fabs(accZ);
-        float tiltAngle = acos(absZ / 1.0) * 180.0 / PI;
-        
-        Serial.print("Z-axis tilt angle: ");
-        Serial.print(tiltAngle);
-        Serial.println(" degrees from vertical");
-        
-        Serial.print("Z acceleration: ");
-        Serial.print(accZ);
-        Serial.println("g (should be near 0 for horizontal or negative for upside down)");
-        
-        Serial.println("Vehicle appears to be in a critical orientation!");
-    }
-    // Process hard brake event
-    else if (eventType == HARD_BRAKE_EVENT) {
-        eventName = "HARD_BRAKE";
-        Serial.println("===== HARD BRAKING EVENT DETAILS =====");
-        // Print the deceleration value for better debugging
-        Serial.print("Forward deceleration: ");
-        Serial.print(accX);
-        Serial.println("g (negative value indicates braking)");
-    }
-    // Process lane change event
-    else if (eventType == LANE_CHANGE_EVENT) {
-        eventName = "LANE_CHANGE";
-        Serial.println("===== LANE CHANGE EVENT DETAILS =====");
-        Serial.print("Lateral acceleration: ");
-        Serial.print(accY);
-        Serial.println("g");
-        Serial.print("Yaw rate: ");
-        Serial.print(gyroZ);
-        Serial.println(" degrees/s");
-    }
-    // Process rapid acceleration event
-    else if (eventType == RAPID_ACCEL_EVENT) {
-        eventName = "RAPID_ACCEL";
-        Serial.println("===== RAPID ACCELERATION EVENT DETAILS =====");
-        // Print the acceleration value for better debugging
-        Serial.print("Forward acceleration: ");
-        Serial.print(accX);
-        Serial.println("g");
-    }
-    // Process spin event
-    else if (eventType == SPIN_EVENT) {
-        eventName = "SPIN";
-        Serial.println("===== SPIN EVENT DETAILS =====");
-        Serial.print("Yaw rate: ");
-        Serial.print(gyroZ);
-        Serial.println(" degrees/s");
-    }
-    // Process high vibration event
-    else if (eventType == HIGH_VIBRATION_EVENT) {
-        eventName = "HIGH_VIBRATION";
-        Serial.println("===== HIGH VIBRATION EVENT DETAILS =====");
-        Serial.println("Check if this is a false alarm!");
-    }
-    // Default for unknown events
-    else {
-        eventName = "UNKNOWN";
+    // Map event type to string name
+    switch(eventType) {
+        case ROLLOVER_EVENT:
+            eventName = "ROLLOVER";
+            break;
+        case HARD_BRAKE_EVENT:
+            eventName = "HARD_BRAKE";
+            break;
+        case LANE_CHANGE_EVENT:
+            eventName = "LANE_CHANGE";
+            break;
+        case RAPID_ACCEL_EVENT:
+            eventName = "RAPID_ACCEL";
+            break;
+        case SPIN_EVENT:
+            eventName = "SPIN";
+            break;
+        case HIGH_VIBRATION_EVENT:
+            eventName = "HIGH_VIBRATION";
+            break;
+        default:
+            eventName = "UNKNOWN";
+            break;
     }
     
-    Serial.print("VEHICLE EVENT DETECTED: ");
-    Serial.println(eventName);
-    Serial.print("Acceleration: X=");
+    // Print simple event notification with sensor data
+    Serial.print("EVENT: ");
+    Serial.print(eventName);
+    Serial.print(" | ACC: X=");
     Serial.print(accX);
-    Serial.print("g, Y=");
+    Serial.print("g Y=");
     Serial.print(accY);
-    Serial.print("g, Z=");
+    Serial.print("g Z=");
     Serial.print(accZ);
-    Serial.println("g");
-    
-    Serial.print("Gyroscope: X=");
+    Serial.print("g | GYRO: X=");
     Serial.print(gyroX);
-    Serial.print("°/s, Y=");
+    Serial.print("°/s Y=");
     Serial.print(gyroY);
-    Serial.print("°/s, Z=");
+    Serial.print("°/s Z=");
     Serial.print(gyroZ);
     Serial.println("°/s");
     
@@ -960,20 +904,20 @@ void AccelerometerGyroClass::processVehicleEvent(VehicleEventType eventType, flo
 }
 
 void AccelerometerGyroClass::defaultMotionHandler(float accX, float accY, float accZ, float gyroX, float gyroY, float gyroZ) {
-    Serial.println("Significant motion detected!");
-    Serial.print("Acceleration: X=");
-    Serial.print(accX);
-    Serial.print("g, Y=");
-    Serial.print(accY);
-    Serial.print("g, Z=");
-    Serial.print(accZ);
-    Serial.println("g");
+    // Serial.println("Significant motion detected!");
+    // Serial.print("Acceleration: X=");
+    // Serial.print(accX);
+    // Serial.print("g, Y=");
+    // Serial.print(accY);
+    // Serial.print("g, Z=");
+    // Serial.print(accZ);
+    // Serial.println("g");
     
-    Serial.print("Gyroscope: X=");
-    Serial.print(gyroX);
-    Serial.print("°/s, Y=");
-    Serial.print(gyroY);
-    Serial.print("°/s, Z=");
-    Serial.print(gyroZ);
-    Serial.println("°/s");
+    // Serial.print("Gyroscope: X=");
+    // Serial.print(gyroX);
+    // Serial.print("°/s, Y=");
+    // Serial.print(gyroY);
+    // Serial.print("°/s, Z=");
+    // Serial.print(gyroZ);
+    // Serial.println("°/s");
 } 

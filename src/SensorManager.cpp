@@ -81,7 +81,7 @@ void SensorManagerClass::update() {
     // Check if it's time to print payload (still once per second)
     if (autoPrintEnabled && (currentTime - lastPrintTime >= printInterval)) {
         lastPrintTime = currentTime;
-        printPayload(autoPrintFormat);
+        // printPayload(autoPrintFormat);
     }
 }
 
