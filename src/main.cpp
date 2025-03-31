@@ -134,9 +134,9 @@ void setup() {
   
   // Set vehicle event thresholds with tuned values for realistic detection
   AccelerometerGyro.setRolloverThreshold(0.8);     
-  AccelerometerGyro.setHardBrakeThreshold(0.3);    // Reduced from 0.4 to 0.3
-  AccelerometerGyro.setLaneChangeThreshold(0.25);  
-  AccelerometerGyro.setRapidAccelThreshold(0.25);  // Reduced from 0.35 to 0.25
+  AccelerometerGyro.setHardBrakeThreshold(0.45);   // Increased from 0.3 to 0.45 to make it harder to trigger
+  AccelerometerGyro.setLaneChangeThreshold(0.35);  // Increased from 0.25 to 0.35 to make it harder to trigger
+  AccelerometerGyro.setRapidAccelThreshold(0.35);  // Increased from 0.25 to 0.35 to make it less sensitive
   AccelerometerGyro.setSpinThreshold(45.0);        
   AccelerometerGyro.setVibrationThreshold(0.4);    
   
@@ -145,6 +145,12 @@ void setup() {
   
   // Test double beep at startup
   Buzzer.doubleBeep();
+  
+  // Print system information
+  Serial.println("Sensor reading frequency: 50Hz (50 times per second)");
+  Serial.println("Data processing rate: ~10Hz (10 times per second)");
+  Serial.println("Payload output rate: 1Hz (once per second)");
+  Serial.println("System ready!");
 }
 
 // Callback handlers that link to module defaults
@@ -193,6 +199,10 @@ void onLocationChange(double lat, double lon) {
 }
 
 void loop() {
+    // Variables to track sensor reading rate
+    static unsigned long lastRateCheck = 0;
+    static int readCounter = 0;
+    
     // Update all sensors
     CardReader.update();
     VoltageMonitor.update();
@@ -203,6 +213,21 @@ void loop() {
     TemperatureSensor.update();
     AccelerometerGyro.update();
     EmergencyButton.update();
+    
+    // Count each loop iteration for debugging the actual reading rate
+    readCounter++;
+    
+    // Once per 5 seconds, print the reading rate
+    if (millis() - lastRateCheck >= 5000) {
+        float rate = readCounter / 5.0; // Readings per second
+        Serial.print("Sensor reading rate: ");
+        Serial.print(rate);
+        Serial.println(" Hz");
+        
+        // Reset counter and timer
+        readCounter = 0;
+        lastRateCheck = millis();
+    }
     
     // Update SensorManager
     SensorManager.update();
@@ -226,6 +251,7 @@ void loop() {
         SDLogger.writeLog(payload);
     }
     
-    // Small delay to prevent overwhelming the serial output
-    delay(100);
+    // Smaller delay to allow for more frequent sensor readings
+    // Was 100ms, reduced to 10ms to enable ~10x faster readings
+    delay(10);
 } 

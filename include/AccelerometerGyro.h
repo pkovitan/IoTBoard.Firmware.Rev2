@@ -121,7 +121,7 @@ private:
     float vibrationThreshold;
     
     // Event window data collection
-    static const int EVENT_WINDOW_SIZE = 10;
+    static const int EVENT_WINDOW_SIZE = 20;
     float accXWindow[EVENT_WINDOW_SIZE];
     float accYWindow[EVENT_WINDOW_SIZE];
     float accZWindow[EVENT_WINDOW_SIZE];
@@ -144,8 +144,8 @@ private:
     // Update event window with new values
     void updateEventWindow();
     
-    // Read interval in milliseconds (changed from 1000ms to 50ms for better event detection)
-    static const unsigned long READ_INTERVAL = 50; // Read every 50 milliseconds (20Hz)
+    // Read interval in milliseconds (changed from 50ms to 20ms for much better event detection)
+    static const unsigned long READ_INTERVAL = 20; // Read every 20 milliseconds (50Hz)
     
     // Minimum time between reported events (to prevent duplicate events)
     static const unsigned long MIN_EVENT_INTERVAL = 5000; // 5 seconds

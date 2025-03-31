@@ -56,14 +56,19 @@ bool SensorManagerClass::begin() {
 }
 
 void SensorManagerClass::update() {
-    // Read data from all sensors
-    readAllSensors();
+    static unsigned long lastReadTime = 0;
+    unsigned long currentTime = millis();
+    
+    // Read data from all sensors more frequently (3 times per second)
+    if (currentTime - lastReadTime >= 333) { // ~3 times per second
+        lastReadTime = currentTime;
+        readAllSensors();
+    }
     
     // Update time string
     updateTimeString();
     
     // Check if we need to reset the event field
-    unsigned long currentTime = millis();
     if (strcmp(event, "NONE") != 0 && (currentTime - lastEventTime >= eventResetInterval)) {
         Serial.println("Resetting event to NONE");
         strcpy(event, "NONE");
@@ -73,7 +78,7 @@ void SensorManagerClass::update() {
     updateJsonPayload();
     updateNmeaPayload();
     
-    // Check if it's time to print payload
+    // Check if it's time to print payload (still once per second)
     if (autoPrintEnabled && (currentTime - lastPrintTime >= printInterval)) {
         lastPrintTime = currentTime;
         printPayload(autoPrintFormat);

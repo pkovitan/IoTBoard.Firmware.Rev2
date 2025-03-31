@@ -393,36 +393,129 @@ bool AccelerometerGyroClass::isHardBrake() {
     float forwardAcc = corrAccX;
     
     // For hard braking, we'll see a strong negative acceleration in forward direction
-    // We also check if the previous few readings confirm a sustained deceleration
+    // Check for peak braking value to make it more responsive
+    float peakBraking = forwardAcc;
     
-    int countHighDecel = 0;
+    // Also look for peak braking in the window
     for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (accXWindow[i] < -hardBrakeThreshold) {
-            countHighDecel++;
+        if (accXWindow[i] < peakBraking) {
+            peakBraking = accXWindow[i];
         }
     }
     
-    // Require at least 2 samples showing high deceleration (reduced from 4)
-    return (forwardAcc < -hardBrakeThreshold && countHighDecel >= 2);
+    // Count high deceleration samples and look for consecutive samples
+    int countHighDecel = 0;
+    int consecutiveHighDecel = 0;
+    int maxConsecutive = 0;
+    
+    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
+        if (accXWindow[i] < -hardBrakeThreshold) {
+            countHighDecel++;
+            consecutiveHighDecel++;
+            if (consecutiveHighDecel > maxConsecutive) {
+                maxConsecutive = consecutiveHighDecel;
+            }
+        } else {
+            consecutiveHighDecel = 0;
+        }
+    }
+    
+    // Print debug info occasionally
+    static unsigned long lastDebugPrint = 0;
+    if (millis() - lastDebugPrint > 1000) {  // Once per second
+        lastDebugPrint = millis();
+        
+        if (peakBraking < -0.1) {  // Only print if there's some braking happening
+            Serial.print("Peak braking: ");
+            Serial.print(peakBraking);
+            Serial.print("g, Threshold: -");
+            Serial.print(hardBrakeThreshold);
+            Serial.print("g, Count: ");
+            Serial.print(countHighDecel);
+            Serial.print(", Max Consecutive: ");
+            Serial.println(maxConsecutive);
+        }
+    }
+    
+    // Make hard brake detection more difficult - require:
+    // 1. Current reading is significantly below threshold (increased factor from 1.2 to 1.7) OR
+    // 2. We have at least 4 samples that meet the threshold AND at least 3 consecutive samples
+    return (peakBraking < -(hardBrakeThreshold * 1.7) || 
+            (forwardAcc < -hardBrakeThreshold && countHighDecel >= 4 && maxConsecutive >= 3));
 }
 
 bool AccelerometerGyroClass::isLaneChange() {
     // Lane change is detected by lateral (side-to-side) acceleration
+    // as well as rotation around the vertical axis (yaw rate from gyro)
     
     // Get lateral acceleration component
     float lateralAcc = corrAccY;
     
-    // Check for significant lateral acceleration 
-    // Add duration check - lateral acceleration should be maintained for a short period
-    int countLateralAcc = 0;
+    // Get yaw rotation rate (rotation around Z axis, which indicates turning)
+    float yawRate = corrGyroZ;
+    
+    // Track peak lateral acceleration
+    float peakLateralAcc = lateralAcc;
+    
+    // Also look for peak lateral acceleration in the window
     for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (abs(accYWindow[i]) > laneChangeThreshold) {
-            countLateralAcc++;
+        if (abs(accYWindow[i]) > abs(peakLateralAcc)) {
+            peakLateralAcc = accYWindow[i];
         }
     }
     
-    // Require at least 3 samples showing lateral acceleration
-    return (abs(lateralAcc) > laneChangeThreshold && countLateralAcc >= 3);
+    // Count high acceleration samples and look for consecutive samples
+    int countLateralAcc = 0;
+    int consecutiveLateralAcc = 0;
+    int maxConsecutive = 0;
+    
+    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
+        if (abs(accYWindow[i]) > laneChangeThreshold) {
+            countLateralAcc++;
+            consecutiveLateralAcc++;
+            if (consecutiveLateralAcc > maxConsecutive) {
+                maxConsecutive = consecutiveLateralAcc;
+            }
+        } else {
+            consecutiveLateralAcc = 0;
+        }
+    }
+    
+    // Count samples with sufficient yaw rate (indicating turning)
+    int countYawRate = 0;
+    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
+        if (abs(gyroZWindow[i]) > 15.0) { // 15 degrees per second threshold for turning
+            countYawRate++;
+        }
+    }
+    
+    // Print debug info occasionally
+    static unsigned long lastDebugPrint = 0;
+    if (millis() - lastDebugPrint > 1000) {  // Once per second
+        lastDebugPrint = millis();
+        
+        if (abs(peakLateralAcc) > 0.1 || abs(yawRate) > 10.0) {  // Only print if there's some movement
+            Serial.print("Lane change detection - Lateral Acc: ");
+            Serial.print(peakLateralAcc);
+            Serial.print("g, Yaw Rate: ");
+            Serial.print(yawRate);
+            Serial.print("°/s, Acc Count: ");
+            Serial.print(countLateralAcc);
+            Serial.print(", Yaw Count: ");
+            Serial.print(countYawRate);
+            Serial.print(", Max Consecutive: ");
+            Serial.println(maxConsecutive);
+        }
+    }
+    
+    // Require both significant lateral acceleration AND yaw rate for more reliable detection
+    // This makes detection harder by requiring both acceleration and rotation
+    // 1. We have a peak lateral acceleration above threshold * 1.5 OR
+    // 2. We have at least 3 consecutive samples over threshold AND
+    // 3. We also need some yaw rate indicating turning (at least 2 samples)
+    return ((abs(peakLateralAcc) > (laneChangeThreshold * 1.5)) || 
+            (abs(lateralAcc) > laneChangeThreshold && countLateralAcc >= 3 && maxConsecutive >= 3)) && 
+           (countYawRate >= 2);
 }
 
 bool AccelerometerGyroClass::isRapidAcceleration() {
@@ -431,18 +524,55 @@ bool AccelerometerGyroClass::isRapidAcceleration() {
     // Get forward acceleration component
     float forwardAcc = corrAccX;
     
-    // For rapid acceleration, we'll see a strong positive acceleration in forward direction
-    // We also check if the previous few readings confirm a sustained acceleration
+    // Find peak acceleration in window
+    float peakAccel = forwardAcc;
     
-    int countHighAccel = 0;
+    // Also look for peak acceleration in the window
     for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
-        if (accXWindow[i] > rapidAccelThreshold) {
-            countHighAccel++;
+        if (accXWindow[i] > peakAccel) {
+            peakAccel = accXWindow[i];
         }
     }
     
-    // Require at least 2 samples showing high acceleration (reduced from 4)
-    return (forwardAcc > rapidAccelThreshold && countHighAccel >= 2);
+    // Count high acceleration samples and look for consecutive samples
+    int countHighAccel = 0;
+    int consecutiveHighAccel = 0;
+    int maxConsecutive = 0;
+    
+    for (int i = 0; i < EVENT_WINDOW_SIZE; i++) {
+        if (accXWindow[i] > rapidAccelThreshold) {
+            countHighAccel++;
+            consecutiveHighAccel++;
+            if (consecutiveHighAccel > maxConsecutive) {
+                maxConsecutive = consecutiveHighAccel;
+            }
+        } else {
+            consecutiveHighAccel = 0;
+        }
+    }
+    
+    // Print debug info occasionally
+    static unsigned long lastDebugPrint = 0;
+    if (millis() - lastDebugPrint > 1000) {  // Once per second
+        lastDebugPrint = millis();
+        
+        if (peakAccel > 0.1) {  // Only print if there's some acceleration happening
+            Serial.print("Peak acceleration: ");
+            Serial.print(peakAccel);
+            Serial.print("g, Threshold: ");
+            Serial.print(rapidAccelThreshold);
+            Serial.print("g, Count: ");
+            Serial.print(countHighAccel);
+            Serial.print(", Max Consecutive: ");
+            Serial.println(maxConsecutive);
+        }
+    }
+    
+    // Less sensitive detection - require:
+    // 1. Current reading is significantly above threshold (increased factor from 1.2 to 1.5) OR
+    // 2. We have at least 3 samples that meet the threshold AND at least 2 consecutive samples
+    return (peakAccel > (rapidAccelThreshold * 1.5) || 
+            (forwardAcc > rapidAccelThreshold && countHighAccel >= 3 && maxConsecutive >= 2));
 }
 
 bool AccelerometerGyroClass::isSpinning() {
@@ -519,6 +649,20 @@ VehicleEventType AccelerometerGyroClass::detectVehicleEvent() {
     
     // Check if enough time has passed since last event
     unsigned long currentTime = millis();
+    
+    // Special longer interval for hard braking to prevent frequent triggers
+    if (lastEventType == HARD_BRAKE_EVENT && 
+        (currentTime - lastEventTime) < (MIN_EVENT_INTERVAL * 3)) {
+        return NO_EVENT;
+    }
+    
+    // Special longer interval for rapid acceleration to prevent false positives
+    if (lastEventType == RAPID_ACCEL_EVENT && 
+        (currentTime - lastEventTime) < (MIN_EVENT_INTERVAL * 2)) {
+        return NO_EVENT;
+    }
+    
+    // Check regular interval for other events
     if ((currentTime - lastEventTime) < MIN_EVENT_INTERVAL) {
         return NO_EVENT;
     }
@@ -601,10 +745,12 @@ void AccelerometerGyroClass::updateEventWindow() {
     windowIndex = (windowIndex + 1) % EVENT_WINDOW_SIZE;
 }
 
+// Set the READ_INTERVAL to 20ms for ~50Hz sampling rate (50 readings per second)
+// This provides much more responsive event detection
 void AccelerometerGyroClass::update() {
     unsigned long currentTime = millis();
     
-    // Read sensor values at regular intervals
+    // Read sensor values at regular intervals (now 50Hz instead of 20Hz)
     if (currentTime - lastReadTime >= READ_INTERVAL) {
         lastReadTime = currentTime;
         
@@ -699,12 +845,22 @@ void AccelerometerGyroClass::processVehicleEvent(VehicleEventType eventType, flo
             break;
         case HARD_BRAKE_EVENT:
             eventName = "HARD_BRAKE";
+            Serial.println("===== HARD BRAKING EVENT DETAILS =====");
+            // Print the deceleration value for better debugging
+            Serial.print("Forward deceleration: ");
+            Serial.print(accX);
+            Serial.println("g (negative value indicates braking)");
             break;
         case LANE_CHANGE_EVENT:
             eventName = "LANE_CHANGE";
             break;
         case RAPID_ACCEL_EVENT:
             eventName = "RAPID_ACCEL";
+            Serial.println("===== RAPID ACCELERATION EVENT DETAILS =====");
+            // Print the acceleration value for better debugging
+            Serial.print("Forward acceleration: ");
+            Serial.print(accX);
+            Serial.println("g");
             break;
         case SPIN_EVENT:
             eventName = "SPIN";
