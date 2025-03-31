@@ -4,6 +4,9 @@
 #include "config.h"
 #include <Wire.h>
 #include <MCP23008.h>
+#include "LEDIndicator.h"
+#include "Buzzer.h"
+#include "SensorManager.h"
 
 class EmergencyButtonClass {
 public:
@@ -23,6 +26,9 @@ public:
     
     // Event callback
     void onPress(void (*callback)());
+    
+    // Default handler that can be used in main
+    void defaultPressHandler();
 
 private:
     MCP23008 expander;

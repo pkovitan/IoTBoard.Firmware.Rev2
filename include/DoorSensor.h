@@ -21,6 +21,10 @@ public:
     // Event callbacks
     void onOpen(void (*callback)());
     void onClose(void (*callback)());
+    
+    // Default handlers that can be used in main
+    void defaultOpenHandler();
+    void defaultCloseHandler();
 
 private:
     MCP23008 expander;

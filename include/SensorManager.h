@@ -50,6 +50,9 @@ public:
     void setFleet(const char* fleet);
     void setID(const char* id);
     void setEvent(const char* event);
+    
+    // Set the time after which events are automatically reset to "NONE"
+    void setEventResetInterval(unsigned long interval);
 
 private:
     // Sensor data
@@ -82,6 +85,10 @@ private:
     unsigned long printInterval;
     unsigned long lastPrintTime;
     PayloadFormat autoPrintFormat;
+    
+    // Event tracking
+    unsigned long lastEventTime;
+    unsigned long eventResetInterval;
     
     // Update payload strings
     void updateJsonPayload();

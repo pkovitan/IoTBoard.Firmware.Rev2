@@ -264,7 +264,7 @@ void GPSModuleClass::onLocationChange(void (*callback)(double lat, double lon)) 
     locationChangeCallback = callback;
 }
 
-void GPSModuleClass::setThreshold(float threshold) {
+void GPSModuleClass::setThreshold(double threshold) {
     locationThreshold = threshold;
 }
 
@@ -288,4 +288,23 @@ void setupGPS() {
 // Update GPS data - call this in the main loop
 void updateGPS() {
     GPSModule.update();
+}
+
+bool GPSModuleClass::hasValidTime() {
+    // For now, we assume that if the GPS has a valid fix, it also has valid time
+    return hasValidFix();
+}
+
+// Add after other methods
+void GPSModuleClass::defaultLocationHandler(double lat, double lon) {
+    Serial.print("GPS location changed: ");
+    Serial.print(lat, 6);
+    Serial.print(", ");
+    Serial.println(lon, 6);
+    
+    // Get current speed
+    float speed = getSpeed();
+    Serial.print("Current speed: ");
+    Serial.print(speed);
+    Serial.println(" km/h");
 } 

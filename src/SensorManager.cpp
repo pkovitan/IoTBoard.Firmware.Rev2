@@ -11,7 +11,7 @@ SensorManagerClass::SensorManagerClass() {
     seq = 0;
     strncpy(timeString, "2000-01-01T00:00:00.000Z", sizeof(timeString) - 1);
     timeString[sizeof(timeString) - 1] = '\0';
-    strcpy(event, "WillDeleteLater");
+    strcpy(event, "NONE");
     strcpy(cardReader, "00000000");
     vin = 0.0;
     vbat = 0.0;
@@ -41,6 +41,10 @@ SensorManagerClass::SensorManagerClass() {
     lastPrintTime = 0;
     autoPrintFormat = JSON_FORMAT;
     
+    // Initialize event tracking
+    lastEventTime = 0;
+    eventResetInterval = 5000; // 5 seconds default
+    
     // Update payloads
     updateJsonPayload();
     updateNmeaPayload();
@@ -58,12 +62,18 @@ void SensorManagerClass::update() {
     // Update time string
     updateTimeString();
     
+    // Check if we need to reset the event field
+    unsigned long currentTime = millis();
+    if (strcmp(event, "NONE") != 0 && (currentTime - lastEventTime >= eventResetInterval)) {
+        Serial.println("Resetting event to NONE");
+        strcpy(event, "NONE");
+    }
+    
     // Update payload strings
     updateJsonPayload();
     updateNmeaPayload();
     
     // Check if it's time to print payload
-    unsigned long currentTime = millis();
     if (autoPrintEnabled && (currentTime - lastPrintTime >= printInterval)) {
         lastPrintTime = currentTime;
         printPayload(autoPrintFormat);
@@ -142,6 +152,13 @@ void SensorManagerClass::setID(const char* id) {
 
 void SensorManagerClass::setEvent(const char* event) {
     strcpy(this->event, event);
+    lastEventTime = millis(); // Record the time when the event was set
+    Serial.print("Event set to: ");
+    Serial.println(event);
+}
+
+void SensorManagerClass::setEventResetInterval(unsigned long interval) {
+    eventResetInterval = interval;
 }
 
 void SensorManagerClass::updateJsonPayload() {

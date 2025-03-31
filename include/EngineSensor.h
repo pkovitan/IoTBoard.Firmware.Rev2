@@ -4,6 +4,7 @@
 #include "config.h"
 #include <Wire.h>
 #include <MCP23008.h>
+#include "LEDIndicator.h"
 
 class EngineSensorClass {
 public:
@@ -21,6 +22,10 @@ public:
     // Event callbacks
     void onEngineStart(void (*callback)());
     void onEngineStop(void (*callback)());
+    
+    // Default handlers that can be used in main
+    void defaultStartHandler();
+    void defaultStopHandler();
 
 private:
     MCP23008 expander;

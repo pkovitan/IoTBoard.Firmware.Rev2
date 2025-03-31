@@ -4,6 +4,8 @@
 #include "config.h"
 #include <Wire.h>
 #include <MCP342x.h>
+#include "LEDIndicator.h"
+#include "Buzzer.h"
 
 class FuelSensorClass {
 public:
@@ -23,6 +25,9 @@ public:
     
     // Set fuel level threshold for callback
     void setThreshold(float threshold);
+    
+    // Default handler that can be used in main
+    void defaultFuelLevelHandler(float fuelLevel);
 
 private:
     MCP342x adc;

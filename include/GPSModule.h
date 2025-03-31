@@ -13,24 +13,33 @@ public:
     // Main update loop - should be called in main loop
     void update();
     
-    // Get GPS data
+    // Get location data
     double getLatitude();
     double getLongitude();
+    
+    // Get speed in km/h
     float getSpeed();
+    
+    // Get heading/direction in degrees (0-359)
     float getDirection();
+    
+    // Get GPS date/time
     const char* getTime();
     
     // Check if GPS has a valid fix
     bool hasValidFix();
     
-    // Check if GPS has valid time (same as hasValidFix for now)
-    bool hasValidTime() { return hasValidFix(); }
+    // Check if GPS has a valid time
+    bool hasValidTime();
     
-    // Event callbacks
-    void onLocationChange(void (*callback)(double lat, double lon));
+    // Set callback for location change
+    void onLocationChange(void (*callback)(double, double));
     
-    // Set distance threshold for callback (in meters)
-    void setThreshold(float threshold);
+    // Set threshold for location change callback (in degrees)
+    void setThreshold(double threshold);
+    
+    // Default location handler that can be used in main
+    void defaultLocationHandler(double lat, double lon);
 
 private:
     // GPS data
@@ -46,7 +55,7 @@ private:
     double lastLongitude;
     
     // Threshold for location change callback (in degrees)
-    float locationThreshold;
+    double locationThreshold;
     
     // Callback function
     void (*locationChangeCallback)(double lat, double lon);

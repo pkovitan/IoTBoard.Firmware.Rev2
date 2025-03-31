@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 #include "config.h"
+#include "LEDIndicator.h"
+#include "Buzzer.h"
 
 class CardReaderClass {
 public:
@@ -10,14 +12,17 @@ public:
     // Initialization
     bool begin();
     
-    // Get card ID
-    const char* getCardID();
-    
     // Main update loop - should be called in main loop
     void update();
     
+    // Get detected card ID
+    const char* getCardID();
+    
     // Event callbacks
     void onCardDetected(void (*callback)(const char*));
+    
+    // Default handler that can be used in main
+    void defaultCardHandler(const char* cardID);
     
 private:
     // UART pins for card reader are defined in config.h

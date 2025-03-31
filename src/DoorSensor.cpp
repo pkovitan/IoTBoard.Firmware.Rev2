@@ -71,4 +71,13 @@ void DoorSensorClass::update() {
     
     // Save the current door state for the next comparison
     lastDoorState = reading;
+}
+
+// Add after other methods
+void DoorSensorClass::defaultOpenHandler() {
+    Serial.println("Door Opened!");
+}
+
+void DoorSensorClass::defaultCloseHandler() {
+    Serial.println("Door Closed!");
 } 

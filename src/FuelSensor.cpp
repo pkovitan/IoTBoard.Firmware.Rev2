@@ -1,4 +1,6 @@
 #include "FuelSensor.h"
+#include "LEDIndicator.h"
+#include "Buzzer.h"
 
 // Create global instance
 FuelSensorClass FuelSensor;
@@ -102,5 +104,18 @@ void FuelSensorClass::update() {
                 fuelChangeCallback(currentFuelLevel);
             }
         }
+    }
+}
+
+void FuelSensorClass::defaultFuelLevelHandler(float fuelLevel) {
+    Serial.print("Fuel level changed to: ");
+    Serial.print(fuelLevel);
+    Serial.println("%");
+    
+    // You can add additional actions here when fuel level changes
+    // For example, turn on warning if fuel level is too low
+    if (fuelLevel < 10.0) {
+        LedIndicator.setOrange(true);
+        Buzzer.beep(500); // Beep for 0.5 second
     }
 } 

@@ -1,4 +1,6 @@
 #include "TemperatureSensor.h"
+#include "LEDIndicator.h"
+#include "Buzzer.h"
 
 // Create global instance
 TemperatureSensorClass TemperatureSensor;
@@ -155,5 +157,18 @@ void TemperatureSensorClass::update() {
                 temperatureChangeCallback(currentTemperature);
             }
         }
+    }
+}
+
+void TemperatureSensorClass::defaultTemperatureHandler(float temperature) {
+    Serial.print("Temperature changed to: ");
+    Serial.print(temperature);
+    Serial.println("°C");
+    
+    // You can add additional actions here when temperature changes
+    // For example, turn on warning if temperature is too high
+    if (temperature > 80.0) {
+        LedIndicator.setRed(true);
+        Buzzer.beep(1000); // Beep for 1 second
     }
 } 

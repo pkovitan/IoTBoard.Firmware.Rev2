@@ -1,4 +1,5 @@
 #include "EngineSensor.h"
+#include "LEDIndicator.h"
 
 // Create global instance
 EngineSensorClass EngineSensor;
@@ -82,4 +83,16 @@ void EngineSensorClass::update() {
     
     // Save the current engine state for the next comparison
     lastEngineState = reading;
+}
+
+void EngineSensorClass::defaultStartHandler() {
+    Serial.println("Engine Started!");
+    // You can add additional actions here when engine starts
+    LedIndicator.setBlue(true); // Turn on blue LED when engine starts
+}
+
+void EngineSensorClass::defaultStopHandler() {
+    Serial.println("Engine Stopped!");
+    // You can add additional actions here when engine stops
+    LedIndicator.setBlue(false); // Turn off blue LED when engine stops
 } 

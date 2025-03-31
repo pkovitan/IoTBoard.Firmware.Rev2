@@ -1,4 +1,6 @@
 #include "CardReader.h"
+#include "LEDIndicator.h"
+#include "Buzzer.h"
 
 // Create global instance
 CardReaderClass CardReader;
@@ -81,4 +83,18 @@ void CardReaderClass::update() {
         Serial.print("Current Card ID: ");
         Serial.println(cardID);
     }
+}
+
+void CardReaderClass::defaultCardHandler(const char* cardID) {
+    Serial.print("Card detected: ");
+    Serial.println(cardID);
+    
+    // You can add additional actions here when a card is detected
+    // For example, validate the card ID against a list of authorized cards
+    LedIndicator.setRed(true);
+    Buzzer.beep(200); // Short beep for card detection
+    
+    // Turn off red LED after 2 seconds
+    delay(2000);
+    LedIndicator.setRed(false);
 } 

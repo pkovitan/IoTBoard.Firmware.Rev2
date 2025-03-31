@@ -19,119 +19,22 @@
 #include "FuelSensor.h"
 #include "CardReader.h"
 #include "AccelerometerGyro.h"
-#include "GPSModule.h"  // Add GPS Module header
-#include "SensorManager.h" // Add Sensor Manager header
-#include "SDLogger.h" // Add SD Card Logger header
+#include "GPSModule.h"
+#include "SensorManager.h"
+#include "SDLogger.h"
 
-// Function prototype
-void updatePayloadData();
-
-// Callback function for emergency button press
-void emergencyButtonPressed() {
-  Serial.println("Emergency Button Pressed!");
-}
-
-// Callback function for GPS location change
-void locationChanged(double lat, double lon) {
-  Serial.print("Location changed to: ");
-  Serial.print(lat, 7);
-  Serial.print(", ");
-  Serial.println(lon, 7);
-}
-
-// Callback functions for door sensor
-void doorOpened() {
-  Serial.println("Door Opened!");
-}
-
-void doorClosed() {
-  Serial.println("Door Closed!");
-}
-
-// Callback functions for engine sensor
-void engineStarted() {
-  Serial.println("Engine Started!");
-  // You can add additional actions here when engine starts
-  LedIndicator.setBlue(true); // Turn on blue LED when engine starts
-}
-
-void engineStopped() {
-  Serial.println("Engine Stopped!");
-  // You can add additional actions here when engine stops
-  LedIndicator.setBlue(false); // Turn off blue LED when engine stops
-}
-
-// Callback function for temperature change
-void temperatureChanged(float temperature) {
-  Serial.print("Temperature changed to: ");
-  Serial.print(temperature);
-  Serial.println("°C");
-  
-  // You can add additional actions here when temperature changes
-  // For example, turn on warning if temperature is too high
-  if (temperature > 80.0) {
-    LedIndicator.setRed(true);
-    Buzzer.beep(1000); // Beep for 1 second
-  }
-}
-
-// Callback function for fuel level change
-void fuelLevelChanged(float fuelLevel) {
-  Serial.print("Fuel level changed to: ");
-  Serial.print(fuelLevel);
-  Serial.println("%");
-  
-  // You can add additional actions here when fuel level changes
-  // For example, turn on warning if fuel level is too low
-  if (fuelLevel < 10.0) {
-    LedIndicator.setOrange(true);
-    Buzzer.beep(500); // Beep for 0.5 second
-  }
-}
-
-// Callback function for card detection
-void cardDetected(const char* cardID) {
-  Serial.print("Card detected: ");
-  Serial.println(cardID);
-  
-  // You can add additional actions here when a card is detected
-  // For example, validate the card ID against a list of authorized cards
-  LedIndicator.setRed(true);
-  Buzzer.beep(200); // Short beep for card detection
-  
-  // Turn off green LED after 2 seconds
-  delay(2000);
-  LedIndicator.setRed(false);
-}
-
-// Callback function for motion detection
-void motionDetected(float accX, float accY, float accZ, float gyroX, float gyroY, float gyroZ) {
-  Serial.println("Significant motion detected!");
-  Serial.print("Acceleration: X=");
-  Serial.print(accX);
-  Serial.print("g, Y=");
-  Serial.print(accY);
-  Serial.print("g, Z=");
-  Serial.print(accZ);
-  Serial.println("g");
-  
-  Serial.print("Gyroscope: X=");
-  Serial.print(gyroX);
-  Serial.print("°/s, Y=");
-  Serial.print(gyroY);
-  Serial.print("°/s, Z=");
-  Serial.print(gyroZ);
-  Serial.println("°/s");
-  
-  // You can add additional actions here when motion is detected
-  // For example, alert if there's a sudden impact or tilt
-  if (abs(accX) > 1.5 || abs(accY) > 1.5 || abs(accZ) > 1.5) {
-    LedIndicator.setRed(true);
-    Buzzer.beep(300); // Beep for impact detection
-    delay(1000);
-    LedIndicator.setRed(false);
-  }
-}
+// Forward declarations for callback functions that link to handlers in each module
+void onEmergencyButtonPress();
+void onDoorOpen();
+void onDoorClose();
+void onEngineStart();
+void onEngineStop();
+void onTemperatureChange(float temperature);
+void onFuelLevelChange(float fuelLevel);
+void onCardDetected(const char* cardID);
+void onMotionDetected(float accX, float accY, float accZ, float gyroX, float gyroY, float gyroZ);
+void onVehicleEvent(VehicleEventType eventType, float accX, float accY, float accZ, float gyroX, float gyroY, float gyroZ);
+void onLocationChange(double lat, double lon);
 
 // Callback function for reading log file
 void printLogLine(const char* line) {
@@ -206,59 +109,87 @@ void setup() {
   // Set auto print interval to 1 second
   SensorManager.setPrintInterval(1000);
   
+  // Set event reset interval to 10 seconds (events will be cleared from payload after 10 seconds)
+  SensorManager.setEventResetInterval(10000);
+  
   // Initialize SD Card Logger
   if (!SDLogger.begin(5)) { // SD card CS pin is 5
     Serial.println("Failed to initialize SD Card Logger!");
-  // } else {
-  //   // Format SD card at startup
-  //   Serial.println("Formatting SD card...");
-  //   if (SDLogger.formatSDCard()) {
-  //     Serial.println("SD card formatted successfully");
-  //   } else {
-  //     Serial.println("Failed to format SD card");
-  //   }
   }
   
-  // Set callback for emergency button press
-  EmergencyButton.onPress(emergencyButtonPressed);
-  
-  // Set callbacks for door sensor
-  DoorSensor.onOpen(doorOpened);
-  DoorSensor.onClose(doorClosed);
-  
-  // Set callbacks for engine sensor
-  EngineSensor.onEngineStart(engineStarted);
-  EngineSensor.onEngineStop(engineStopped);
-  
-  // Set callback for temperature sensor
-  TemperatureSensor.onTemperatureChange(temperatureChanged);
-  
-  // Set temperature threshold to 2 degrees (callback will be triggered when temperature changes by 2°C or more)
+  // Set callbacks for all sensors
+  EmergencyButton.onPress(onEmergencyButtonPress);
+  DoorSensor.onOpen(onDoorOpen);
+  DoorSensor.onClose(onDoorClose);
+  EngineSensor.onEngineStart(onEngineStart);
+  EngineSensor.onEngineStop(onEngineStop);
+  TemperatureSensor.onTemperatureChange(onTemperatureChange);
   TemperatureSensor.setThreshold(2.0);
-  
-  // Set callback for fuel sensor
-  FuelSensor.onFuelLevelChange(fuelLevelChanged);
-  
-  // Set fuel threshold to 5% (callback will be triggered when fuel level changes by 5% or more)
+  FuelSensor.onFuelLevelChange(onFuelLevelChange);
   FuelSensor.setThreshold(5.0);
-  
-  // Set callback for card reader
-  CardReader.onCardDetected(cardDetected);
-  
-  // Set callback for accelerometer/gyro
-  AccelerometerGyro.onMotionDetected(motionDetected);
-  
-  // Set motion threshold to 0.5g (callback will be triggered when acceleration changes by 0.5g or more)
+  CardReader.onCardDetected(onCardDetected);
+  AccelerometerGyro.onMotionDetected(onMotionDetected);
+  AccelerometerGyro.onVehicleEvent(onVehicleEvent);
   AccelerometerGyro.setThreshold(0.5);
   
-  // Set callback for GPS location change
-  GPSModule.onLocationChange(locationChanged);
+  // Set vehicle event thresholds with tuned values for realistic detection
+  AccelerometerGyro.setRolloverThreshold(0.8);     
+  AccelerometerGyro.setHardBrakeThreshold(0.3);    // Reduced from 0.4 to 0.3
+  AccelerometerGyro.setLaneChangeThreshold(0.25);  
+  AccelerometerGyro.setRapidAccelThreshold(0.25);  // Reduced from 0.35 to 0.25
+  AccelerometerGyro.setSpinThreshold(45.0);        
+  AccelerometerGyro.setVibrationThreshold(0.4);    
   
-  // Set location threshold to 0.0001 degrees (approximately 10 meters)
+  GPSModule.onLocationChange(onLocationChange);
   GPSModule.setThreshold(0.0001);
   
   // Test double beep at startup
   Buzzer.doubleBeep();
+}
+
+// Callback handlers that link to module defaults
+void onEmergencyButtonPress() {
+  EmergencyButton.defaultPressHandler();
+}
+
+void onDoorOpen() {
+  DoorSensor.defaultOpenHandler();
+}
+
+void onDoorClose() {
+  DoorSensor.defaultCloseHandler();
+}
+
+void onEngineStart() {
+  EngineSensor.defaultStartHandler();
+}
+
+void onEngineStop() {
+  EngineSensor.defaultStopHandler();
+}
+
+void onTemperatureChange(float temperature) {
+  TemperatureSensor.defaultTemperatureHandler(temperature);
+}
+
+void onFuelLevelChange(float fuelLevel) {
+  FuelSensor.defaultFuelLevelHandler(fuelLevel);
+}
+
+void onCardDetected(const char* cardID) {
+  CardReader.defaultCardHandler(cardID);
+}
+
+void onMotionDetected(float accX, float accY, float accZ, float gyroX, float gyroY, float gyroZ) {
+  AccelerometerGyro.defaultMotionHandler(accX, accY, accZ, gyroX, gyroY, gyroZ);
+}
+
+void onVehicleEvent(VehicleEventType eventType, float accX, float accY, float accZ, float gyroX, float gyroY, float gyroZ) {
+  AccelerometerGyro.processVehicleEvent(eventType, accX, accY, accZ, gyroX, gyroY, gyroZ);
+}
+
+void onLocationChange(double lat, double lon) {
+  GPSModule.defaultLocationHandler(lat, lon);
 }
 
 void loop() {
@@ -293,29 +224,6 @@ void loop() {
     // Log to SD card
     if (SDLogger.isCardMounted()) {
         SDLogger.writeLog(payload);
-        
-        // Print SD card statistics and log contents every 10 seconds
-        static unsigned long lastStatsPrint = 0;
-        if (millis() - lastStatsPrint >= 10 * 1000) { // 10 seconds in milliseconds
-            lastStatsPrint = millis();
-            
-            Serial.println("\n=== SD Card Statistics ===");
-            Serial.printf("Used: %lluMB / Total: %lluMB\n", 
-                SDLogger.getUsedBytes() / (1024 * 1024), 
-                SDLogger.getTotalBytes() / (1024 * 1024)
-            );
-            Serial.println("=====================\n");
-            
-            // Read and display log file contents
-            Serial.println("\n=== Log File Contents ===");
-            Serial.printf("Current file: %s\n", SDLogger.getCurrentFileName());
-            if (SDLogger.readLog(SDLogger.getCurrentFileName(), printLogLine)) {
-                Serial.println("Log file read successfully");
-            } else {
-                Serial.println("Failed to read log file");
-            }
-            Serial.println("=====================\n");
-        }
     }
     
     // Small delay to prevent overwhelming the serial output
